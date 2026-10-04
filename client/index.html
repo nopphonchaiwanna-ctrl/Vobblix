@@ -1,0 +1,1043 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VobbLiX</title>
+    <!-- Applies the saved light/dark theme (see src/prefs.js, toggled
+         from the topbar - main.js) before the stylesheet paints
+         anything, so a returning light-theme user doesn't see a flash
+         of the dark theme first. Inlined and synchronous (not an
+         import of prefs.js) specifically so it runs with nothing else
+         blocking it. -->
+    <script>
+      (function () {
+        try {
+          if (localStorage.getItem("vobblix:pref:theme") === "light") {
+            document.documentElement.setAttribute("data-theme", "light");
+          }
+        } catch (e) {
+          // localStorage can throw (private browsing, disabled, ...) -
+          // falls back to the default dark theme, same as before this
+          // existed.
+        }
+      })();
+    </script>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <!-- Default top bar: shown on every screen once logged in (hidden
+         while #auth is up - there's no account/session to show yet).
+         main.js toggles #app-topbar.hidden alongside #auth/#lobby. The
+         brand button always goes back to the lobby from anywhere,
+         including out of a shop (see main.js's goToLobby()/leaveShop());
+         the profile button opens a dropdown with the account-level
+         pages that used to live as separate buttons on the lobby card
+         (Settings, My orders, My shop, Admin panel) plus Log out, so
+         they're reachable from inside a shop too, not just the lobby. -->
+    <header id="app-topbar" class="app-topbar" hidden>
+      <button type="button" id="topbar-brand" class="topbar-brand">VobbLiX</button>
+      <div class="topbar-right">
+        <button
+          type="button"
+          id="topbar-theme-toggle"
+          class="topbar-theme-toggle"
+          aria-label="Toggle light/dark theme"
+          title="Toggle light/dark theme"
+        ></button>
+        <div class="topbar-notif" id="topbar-notif">
+          <button
+            type="button"
+            id="topbar-notif-btn"
+            class="topbar-notif-btn"
+            popovertarget="topbar-notif-menu"
+            aria-haspopup="true"
+            aria-expanded="false"
+            aria-label="Notifications"
+            title="Notifications"
+          >
+            <span class="icon icon-only"><svg
+  class="lucide lucide-bell"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M10.268 21a2 2 0 0 0 3.464 0" />
+  <path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326" />
+</svg></span>
+            <span id="topbar-notif-badge" class="topbar-notif-badge" hidden>0</span>
+          </button>
+          <div id="topbar-notif-menu" class="topbar-menu topbar-notif-menu" role="menu" popover="auto">
+            <p class="hint" id="topbar-notif-empty">No notifications yet.</p>
+            <div id="topbar-notif-list"></div>
+          </div>
+        </div>
+        <div class="topbar-profile" id="topbar-profile">
+          <button type="button" id="topbar-profile-btn" class="topbar-profile-btn" aria-haspopup="true" aria-expanded="false">
+            <img id="topbar-avatar" class="topbar-avatar" alt="" hidden />
+            <span id="topbar-avatar-fallback" class="topbar-avatar-fallback"><span class="icon icon-only"><svg
+  class="lucide lucide-user"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
+  <circle cx="12" cy="7" r="4" />
+</svg></span></span>
+            <span id="topbar-name" class="topbar-name"></span>
+            <span class="topbar-caret" aria-hidden="true">▾</span>
+          </button>
+          <div id="topbar-menu" class="topbar-menu" role="menu" hidden>
+            <button type="button" id="topbar-menu-settings" class="topbar-menu-item" role="menuitem"><span class="icon"><svg
+  class="lucide lucide-settings"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915" />
+  <circle cx="12" cy="12" r="3" />
+</svg></span>Settings</button>
+            <button type="button" id="topbar-menu-orders" class="topbar-menu-item" role="menuitem"><span class="icon"><svg
+  class="lucide lucide-package"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z" />
+  <path d="M12 22V12" />
+  <polyline points="3.29 7 12 12 20.71 7" />
+  <path d="m7.5 4.27 9 5.15" />
+</svg></span>My orders</button>
+            <button type="button" id="topbar-menu-myshop" class="topbar-menu-item" role="menuitem" hidden><span class="icon"><svg
+  class="lucide lucide-store"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M15 21v-5a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v5" />
+  <path d="M17.774 10.31a1.12 1.12 0 0 0-1.549 0 2.5 2.5 0 0 1-3.451 0 1.12 1.12 0 0 0-1.548 0 2.5 2.5 0 0 1-3.452 0 1.12 1.12 0 0 0-1.549 0 2.5 2.5 0 0 1-3.77-3.248l2.889-4.184A2 2 0 0 1 7 2h10a2 2 0 0 1 1.653.873l2.895 4.192a2.5 2.5 0 0 1-3.774 3.244" />
+  <path d="M4 10.95V19a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8.05" />
+</svg></span>My shop</button>
+            <button type="button" id="topbar-menu-admin" class="topbar-menu-item" role="menuitem" hidden><span class="icon"><svg
+  class="lucide lucide-wrench"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z" />
+</svg></span>Admin panel</button>
+            <div class="topbar-menu-divider" role="separator"></div>
+            <button type="button" id="topbar-menu-logout" class="topbar-menu-item topbar-menu-item-danger" role="menuitem"><span class="icon"><svg
+  class="lucide lucide-log-out"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="m16 17 5-5-5-5" />
+  <path d="M21 12H9" />
+  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+</svg></span>Log out</button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Auth: create an account or log in before anything else. Starts
+         hidden (unlike the old version of this comment said) so a
+         returning user with a saved token doesn't see a flash of the
+         login form while main.js's restoreSession() is still waiting
+         on the network to confirm that token - the router's /login
+         route (and the session-expired/logout paths) are what actually
+         set authScreen.hidden = false when a login form is genuinely
+         needed. -->
+    <div id="auth" hidden>
+      <div class="lobby-card">
+        <h1>VobbLiX</h1>
+        <p class="subtitle">Log in or create an account to enter a shop.</p>
+
+        <div class="auth-tabs">
+          <button type="button" id="auth-tab-login" class="auth-tab active">Log in</button>
+          <button type="button" id="auth-tab-register" class="auth-tab">Register</button>
+        </div>
+
+        <form id="login-form" class="auth-form">
+          <label>
+            Email
+            <input id="login-email" type="email" autocomplete="email" required />
+          </label>
+          <label>
+            Password
+            <input id="login-password" type="password" autocomplete="current-password" required />
+          </label>
+          <button type="submit">Log in</button>
+          <button type="button" id="resend-verification-btn" class="link-button" hidden>
+            Resend verification email
+          </button>
+          <button type="button" id="forgot-password-link" class="link-button">
+            Forgot password?
+          </button>
+        </form>
+
+        <form id="register-form" class="auth-form" hidden>
+          <label>
+            Display name
+            <input id="register-name" maxlength="24" autocomplete="nickname" required />
+          </label>
+          <label>
+            Email
+            <input id="register-email" type="email" autocomplete="email" required />
+          </label>
+          <label>
+            Password
+            <input id="register-password" type="password" minlength="8" pattern="(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}" title="At least 8 characters, with 1 uppercase letter, 1 number, and 1 special character." aria-describedby="register-password-rules" autocomplete="new-password" required />
+          </label>
+          <ul class="password-rules" id="register-password-rules">
+            <li data-rule="length"><span class="rule-icon" aria-hidden="true"></span>At least 8 characters</li>
+            <li data-rule="upper"><span class="rule-icon" aria-hidden="true"></span>One uppercase letter</li>
+            <li data-rule="number"><span class="rule-icon" aria-hidden="true"></span>One number</li>
+            <li data-rule="special"><span class="rule-icon" aria-hidden="true"></span>One special character</li>
+          </ul>
+          <label>
+            Confirm password
+            <input id="register-confirm-password" type="password" autocomplete="new-password" aria-describedby="register-confirm-rules" required />
+          </label>
+          <ul class="password-rules" id="register-confirm-rules">
+            <li data-rule="match"><span class="rule-icon" aria-hidden="true"></span>Passwords don't match</li>
+          </ul>
+          <button type="submit">Create account</button>
+        </form>
+
+        <!-- Shown instead of the login/register tabs when the user
+             clicks "Forgot password?" - see main.js. A plain email-only
+             form; the server always responds success either way so
+             this can't be used to probe which emails are registered. -->
+        <form id="forgot-password-form" class="auth-form" hidden>
+          <p class="subtitle">Enter your email and we'll send you a link to reset your password.</p>
+          <label>
+            Email
+            <input id="forgot-password-email" type="email" autocomplete="email" required />
+          </label>
+          <button type="submit">Send reset link</button>
+          <button type="button" id="forgot-password-cancel" class="link-button">
+            Back to log in
+          </button>
+        </form>
+
+        <!-- Shown when the URL is /reset-password?token=... (the link
+             from a password-reset email) - see main.js's route handler. -->
+        <form id="reset-password-form" class="auth-form" hidden>
+          <p class="subtitle">Choose a new password.</p>
+          <label>
+            New password
+            <input id="reset-password-new" type="password" minlength="8" pattern="(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}" title="At least 8 characters, with 1 uppercase letter, 1 number, and 1 special character." aria-describedby="reset-password-rules" autocomplete="new-password" required />
+          </label>
+          <ul class="password-rules" id="reset-password-rules">
+            <li data-rule="length"><span class="rule-icon" aria-hidden="true"></span>At least 8 characters</li>
+            <li data-rule="upper"><span class="rule-icon" aria-hidden="true"></span>One uppercase letter</li>
+            <li data-rule="number"><span class="rule-icon" aria-hidden="true"></span>One number</li>
+            <li data-rule="special"><span class="rule-icon" aria-hidden="true"></span>One special character</li>
+          </ul>
+          <label>
+            Confirm password
+            <input id="reset-password-confirm" type="password" autocomplete="new-password" aria-describedby="reset-confirm-rules" required />
+          </label>
+          <ul class="password-rules" id="reset-confirm-rules">
+            <li data-rule="match"><span class="rule-icon" aria-hidden="true"></span>Passwords don't match</li>
+          </ul>
+          <button type="submit">Reset password</button>
+        </form>
+
+        <p id="auth-error" class="error" hidden></p>
+        <p id="auth-notice" class="notice" hidden></p>
+      </div>
+    </div>
+
+    <!-- Lobby: pick a shop code before entering the floor. Hidden until
+         a session exists - see main.js's enterLobby(). -->
+    <div id="lobby" hidden>
+      <!-- A quick at-a-glance strip above the two lobby cards - how
+           many shops/items there are to browse, and (if you're a shop
+           owner) your own shop's status - see main.js's
+           renderLobbyStats(). Empty (no tiles) until refreshLobbyExtras()
+           has data, rather than a hardcoded skeleton. -->
+      <div id="lobby-stats" class="lobby-stats"></div>
+
+      <div class="lobby-card">
+        <h1>VobbLiX</h1>
+        <p class="subtitle">Walk in, pick a table, and chat with whoever's sitting there.</p>
+        <p class="hint" id="logged-in-as"></p>
+        <label>
+          Shop code
+          <input id="room-input" maxlength="24" placeholder="default" autocomplete="off" />
+        </label>
+        <p class="hint">Share the same shop code with friends to land in the same room.</p>
+        <button id="join-btn">Enter shop</button>
+
+        <!-- Settings/My orders/My shop/Admin panel/Log out now live in
+             the default top bar's profile dropdown (see #app-topbar
+             above) so they're reachable from every screen, not just
+             here. "Apply to become a shop owner" stays here - it's a
+             one-off lobby action, not a page to navigate to. -->
+        <div class="lobby-links">
+          <button type="button" id="apply-owner-btn" class="secondary" hidden><span class="icon"><svg
+  class="lucide lucide-store"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M15 21v-5a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v5" />
+  <path d="M17.774 10.31a1.12 1.12 0 0 0-1.549 0 2.5 2.5 0 0 1-3.451 0 1.12 1.12 0 0 0-1.548 0 2.5 2.5 0 0 1-3.452 0 1.12 1.12 0 0 0-1.549 0 2.5 2.5 0 0 1-3.77-3.248l2.889-4.184A2 2 0 0 1 7 2h10a2 2 0 0 1 1.653.873l2.895 4.192a2.5 2.5 0 0 1-3.774 3.244" />
+  <path d="M4 10.95V19a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8.05" />
+</svg></span>Apply to become a shop owner</button>
+        </div>
+        <p class="hint" id="owner-status-hint" hidden></p>
+
+        <p id="lobby-error" class="error" hidden></p>
+      </div>
+
+      <div class="lobby-card wide-card">
+        <h2 class="panel-subhead" style="margin-top:0"><span class="icon"><svg
+  class="lucide lucide-store"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M15 21v-5a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v5" />
+  <path d="M17.774 10.31a1.12 1.12 0 0 0-1.549 0 2.5 2.5 0 0 1-3.451 0 1.12 1.12 0 0 0-1.548 0 2.5 2.5 0 0 1-3.452 0 1.12 1.12 0 0 0-1.549 0 2.5 2.5 0 0 1-3.77-3.248l2.889-4.184A2 2 0 0 1 7 2h10a2 2 0 0 1 1.653.873l2.895 4.192a2.5 2.5 0 0 1-3.774 3.244" />
+  <path d="M4 10.95V19a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8.05" />
+</svg></span>Published shops</h2>
+        <p class="hint">Browse shops other players have opened and published - click one to walk in.</p>
+        <div id="published-shops-list" class="list"></div>
+      </div>
+    </div>
+
+    <!-- Owner dashboard: create/edit your one shop and manage its
+         listings. Only reachable once role === "shop_owner" (see
+         main.js's refreshOwnerUI()). -->
+    <div id="owner-dashboard" hidden>
+      <div class="lobby-card wide-card">
+        <button type="button" class="back-btn" id="owner-dashboard-back"><span class="icon"><svg
+  class="lucide lucide-arrow-left"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="m12 19-7-7 7-7" />
+  <path d="M19 12H5" />
+</svg></span>Back</button>
+        <h1><span class="icon"><svg
+  class="lucide lucide-store"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M15 21v-5a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v5" />
+  <path d="M17.774 10.31a1.12 1.12 0 0 0-1.549 0 2.5 2.5 0 0 1-3.451 0 1.12 1.12 0 0 0-1.548 0 2.5 2.5 0 0 1-3.452 0 1.12 1.12 0 0 0-1.549 0 2.5 2.5 0 0 1-3.77-3.248l2.889-4.184A2 2 0 0 1 7 2h10a2 2 0 0 1 1.653.873l2.895 4.192a2.5 2.5 0 0 1-3.774 3.244" />
+  <path d="M4 10.95V19a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8.05" />
+</svg></span>Manage my shop</h1>
+        <p class="hint" id="owner-shop-status"></p>
+
+        <form id="owner-shop-form">
+          <label>
+            Shop name
+            <input id="owner-shop-name" maxlength="40" required />
+          </label>
+          <label>
+            Shop code (players join it the same way as any shop code)
+            <input id="owner-shop-code" maxlength="24" pattern="[a-z0-9-]{3,24}" placeholder="e.g. longs-card-corner" />
+          </label>
+          <label>
+            Description
+            <input id="owner-shop-description" maxlength="500" />
+          </label>
+          <label>
+            Floor size
+            <select id="owner-shop-template"></select>
+          </label>
+          <label>
+            Theme
+            <select id="owner-shop-theme"></select>
+          </label>
+          <label>
+            Logo (image URL, optional)
+            <input id="owner-shop-logo" type="url" placeholder="https://..." />
+          </label>
+          <button type="submit" id="owner-shop-submit">Save &amp; submit for review</button>
+        </form>
+        <p id="owner-shop-error" class="error" hidden></p>
+
+        <div id="owner-listings-section" hidden>
+          <h2 class="panel-subhead">Listings</h2>
+          <div id="owner-listings-list" class="list"></div>
+
+          <form id="owner-listing-form">
+            <label>
+              Item title
+              <input id="listing-title" maxlength="80" required />
+            </label>
+            <label>
+              Price (THB)
+              <input id="listing-price" type="number" min="0" step="1" required />
+            </label>
+            <label>
+              Stock (leave blank = unlimited)
+              <input id="listing-stock" type="number" min="0" step="1" />
+            </label>
+            <label>
+              Description
+              <input id="listing-description" maxlength="500" />
+            </label>
+            <label>
+              Photo (image URL, optional)
+              <input id="listing-photo" type="url" placeholder="https://..." />
+            </label>
+            <button type="submit">Add listing</button>
+          </form>
+          <p id="owner-listing-error" class="error" hidden></p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Admin panel: review shop-owner applications and pending shops.
+         Only reachable once role === "admin" (set with
+         server/scripts/set-role.js - there's no self-service path). -->
+    <div id="admin-panel" hidden>
+      <div class="lobby-card wide-card">
+        <button type="button" class="back-btn" id="admin-panel-back"><span class="icon"><svg
+  class="lucide lucide-arrow-left"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="m12 19-7-7 7-7" />
+  <path d="M19 12H5" />
+</svg></span>Back</button>
+        <h1><span class="icon"><svg
+  class="lucide lucide-wrench"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z" />
+</svg></span>Admin panel</h1>
+
+        <h2 class="panel-subhead">Shop-owner applications</h2>
+        <div id="admin-applications-list" class="list"></div>
+
+        <h2 class="panel-subhead">Shops pending review</h2>
+        <div id="admin-shops-list" class="list"></div>
+      </div>
+    </div>
+
+    <!-- My orders: every buy/sell thread the account is part of, as
+         either buyer or seller. -->
+    <div id="orders-panel" hidden>
+      <div class="lobby-card wide-card">
+        <button type="button" class="back-btn" id="orders-panel-back"><span class="icon"><svg
+  class="lucide lucide-arrow-left"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="m12 19-7-7 7-7" />
+  <path d="M19 12H5" />
+</svg></span>Back</button>
+        <h1><span class="icon"><svg
+  class="lucide lucide-package"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z" />
+  <path d="M12 22V12" />
+  <polyline points="3.29 7 12 12 20.71 7" />
+  <path d="m7.5 4.27 9 5.15" />
+</svg></span>My orders</h1>
+        <div id="orders-list" class="list"></div>
+      </div>
+    </div>
+
+    <!-- One order's negotiation thread - opened either from "My orders"
+         or from a listing's "Message the seller" button while inside a
+         shop (see ui/marketplace.js). -->
+    <div id="order-thread" hidden>
+      <div class="lobby-card wide-card">
+        <button type="button" class="back-btn" id="order-thread-back"><span class="icon"><svg
+  class="lucide lucide-arrow-left"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="m12 19-7-7 7-7" />
+  <path d="M19 12H5" />
+</svg></span>Back</button>
+        <h1 id="order-thread-title">Order</h1>
+        <p class="hint" id="order-thread-meta"></p>
+        <div id="order-thread-actions" class="order-actions"></div>
+        <div class="chat-log order-thread-log" id="order-thread-log"></div>
+        <form id="order-thread-form" class="chat-form order-thread-form">
+          <input id="order-thread-input" placeholder="Type a message..." autocomplete="off" />
+          <button type="submit">Send</button>
+        </form>
+        <p id="order-thread-error" class="error" hidden></p>
+      </div>
+    </div>
+
+    <!-- Settings: edit profile basics, change password, check your
+         shop-owner application status, and request account deletion.
+         Reachable from the lobby for any logged-in account - see
+         ui/settings.js / main.js. -->
+    <div id="settings-panel" hidden>
+      <div class="lobby-card wide-card">
+        <button type="button" class="back-btn" id="settings-back"><span class="icon"><svg
+  class="lucide lucide-arrow-left"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="m12 19-7-7 7-7" />
+  <path d="M19 12H5" />
+</svg></span>Back</button>
+        <h1><span class="icon"><svg
+  class="lucide lucide-settings"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915" />
+  <circle cx="12" cy="12" r="3" />
+</svg></span>Settings</h1>
+
+        <h2 class="panel-subhead" style="margin-top:0">Profile</h2>
+        <form id="settings-profile-form">
+          <label>
+            Display name
+            <input id="settings-display-name" maxlength="24" required />
+          </label>
+
+          <!-- Profile photo: picked from disk and resized/encoded
+               client-side (see ui/settings.js's fileToAvatarDataUrl())
+               into a small data: URL that's saved in the same
+               avatar_url column a plain image URL used to go in - no
+               separate file storage/upload endpoint needed. -->
+          <div class="settings-avatar-field">
+            <span class="settings-avatar-field-label">Profile photo</span>
+            <div class="settings-avatar-row">
+              <img id="settings-avatar-preview" class="settings-avatar-preview" hidden alt="Avatar preview" />
+              <div id="settings-avatar-fallback" class="settings-avatar-fallback"><span class="icon icon-only"><svg
+  class="lucide lucide-user"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
+  <circle cx="12" cy="7" r="4" />
+</svg></span></div>
+              <div class="settings-avatar-actions">
+                <button type="button" id="settings-avatar-choose-btn" class="secondary">Choose photo...</button>
+                <button type="button" id="settings-avatar-remove-btn" class="secondary danger" hidden>Remove</button>
+                <input type="file" id="settings-avatar-file" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
+              </div>
+            </div>
+            <p id="settings-avatar-error" class="error" hidden></p>
+          </div>
+
+          <button type="submit">Save profile</button>
+        </form>
+        <p id="settings-profile-success" class="hint" hidden>Saved.</p>
+        <p id="settings-profile-error" class="error" hidden></p>
+
+        <h2 class="panel-subhead">Password</h2>
+        <form id="settings-password-form">
+          <label>
+            Current password
+            <input id="settings-current-password" type="password" autocomplete="current-password" required />
+          </label>
+          <label>
+            New password
+            <input id="settings-new-password" type="password" minlength="8" pattern="(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}" title="At least 8 characters, with 1 uppercase letter, 1 number, and 1 special character." aria-describedby="settings-password-rules" autocomplete="new-password" required />
+          </label>
+          <ul class="password-rules" id="settings-password-rules">
+            <li data-rule="length"><span class="rule-icon" aria-hidden="true"></span>At least 8 characters</li>
+            <li data-rule="upper"><span class="rule-icon" aria-hidden="true"></span>One uppercase letter</li>
+            <li data-rule="number"><span class="rule-icon" aria-hidden="true"></span>One number</li>
+            <li data-rule="special"><span class="rule-icon" aria-hidden="true"></span>One special character</li>
+          </ul>
+          <label>
+            Confirm password
+            <input id="settings-confirm-password" type="password" autocomplete="new-password" aria-describedby="settings-confirm-rules" required />
+          </label>
+          <ul class="password-rules" id="settings-confirm-rules">
+            <li data-rule="match"><span class="rule-icon" aria-hidden="true"></span>Passwords don't match</li>
+          </ul>
+          <button type="submit">Change password</button>
+        </form>
+        <p id="settings-password-success" class="hint" hidden>Password changed.</p>
+        <p id="settings-password-error" class="error" hidden></p>
+
+        <h2 class="panel-subhead">Shop-owner application</h2>
+        <p class="hint" id="settings-application-status">Loading...</p>
+
+        <!-- Click a name in any shop/table chat to block it (see
+             ui/chat.js) - this list is just for seeing who, and
+             undoing it. Unlike everything else on this page, this
+             list has no "save" button - each Unblock takes effect
+             immediately (see settings.js). -->
+        <h2 class="panel-subhead">Notifications</h2>
+        <div class="row">
+          <div class="row-main">
+            <div class="row-title">Order notifications</div>
+            <div class="row-meta">Show a popup when you get a new order, message, or status update.</div>
+          </div>
+          <div class="row-actions">
+            <label class="switch">
+              <input type="checkbox" id="settings-notify-orders" />
+              <span class="switch-track"></span>
+            </label>
+          </div>
+        </div>
+        <div class="row">
+          <div class="row-main">
+            <div class="row-title">Notification sound</div>
+            <div class="row-meta">Play a sound alongside order notifications.</div>
+          </div>
+          <div class="row-actions">
+            <label class="switch">
+              <input type="checkbox" id="settings-notify-sound" />
+              <span class="switch-track"></span>
+            </label>
+          </div>
+        </div>
+
+                <h2 class="panel-subhead">Blocked users</h2>
+        <p class="hint" id="settings-blocked-empty">You haven't blocked anyone.</p>
+        <div class="list" id="settings-blocked-list"></div>
+        <p id="settings-blocked-error" class="error" hidden></p>
+
+        <h2 class="panel-subhead">Danger zone</h2>
+        <p class="hint" id="settings-deletion-status" hidden></p>
+        <button type="button" id="settings-delete-account-btn" class="secondary danger">Request account deletion</button>
+        <p id="settings-delete-error" class="error" hidden></p>
+      </div>
+    </div>
+
+    <!-- Game: hidden until the player joins -->
+    <div id="game-screen" hidden>
+      <!-- The topbar brand link (click "VobbLiX" -> navigate to /lobby)
+           already leaves the shop too, but that's not an obvious exit
+           affordance once you're deep in a shop looking at the canvas -
+           this makes it explicit and reachable right where you are. -->
+      <button type="button" id="leave-shop-btn" class="leave-shop-btn" title="Leave shop" aria-label="Leave shop"><span class="icon"><svg
+  class="lucide lucide-log-out"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="m16 17 5-5-5-5" />
+  <path d="M21 12H9" />
+  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+</svg></span></button>
+      <div id="game"></div>
+
+      <aside id="chat-panels">
+        <section class="chat-panel" id="shop-chat-panel">
+          <header><span class="icon"><svg
+  class="lucide lucide-store"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M15 21v-5a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v5" />
+  <path d="M17.774 10.31a1.12 1.12 0 0 0-1.549 0 2.5 2.5 0 0 1-3.451 0 1.12 1.12 0 0 0-1.548 0 2.5 2.5 0 0 1-3.452 0 1.12 1.12 0 0 0-1.549 0 2.5 2.5 0 0 1-3.77-3.248l2.889-4.184A2 2 0 0 1 7 2h10a2 2 0 0 1 1.653.873l2.895 4.192a2.5 2.5 0 0 1-3.774 3.244" />
+  <path d="M4 10.95V19a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8.05" />
+</svg></span>Shop chat <span id="shop-name-label"></span></header>
+          <!-- Reliable "who's in this table's voice call" roster - lives
+               here (always visible, not inside the video-tile grid)
+               specifically so it keeps showing everyone's name/mic/
+               deafen status even when someone's video tile is on-screen
+               (see ui/chat.js). -->
+          <div class="voice-roster" id="voice-roster" hidden>
+            <div class="voice-roster-label"><span class="icon"><svg
+  class="lucide lucide-mic"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M12 19v3" />
+  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+  <rect x="9" y="2" width="6" height="13" rx="3" />
+</svg></span>In voice call</div>
+            <div class="voice-roster-list" id="voice-roster-list"></div>
+          </div>
+          <div class="chat-log" id="shop-chat-log"></div>
+          <form id="shop-chat-form" class="chat-form">
+            <input id="shop-chat-input" placeholder="Message everyone in the shop..." autocomplete="off" />
+            <button type="submit">Send</button>
+          </form>
+        </section>
+
+        <!-- Listings for the current shop, only shown when it's an
+             owner-created marketplace shop (see main.js's isOwnedShop
+             flag from join-shop's ack) - an ad-hoc hangout room has no
+             listings and hides this panel entirely. -->
+        <section class="chat-panel" id="shop-listings-panel" hidden>
+          <header><span class="icon"><svg
+  class="lucide lucide-shopping-bag"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M16 10a4 4 0 0 1-8 0" />
+  <path d="M3.103 6.034h17.794" />
+  <path d="M3.4 5.467a2 2 0 0 0-.4 1.2V20a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6.667a2 2 0 0 0-.4-1.2l-2-2.667A2 2 0 0 0 17 2H7a2 2 0 0 0-1.6.8z" />
+</svg></span>Shop listings</header>
+          <div class="list listings-panel-list" id="shop-listings-list"></div>
+          <p class="table-hint error" id="shop-listings-error" hidden></p>
+        </section>
+
+        <!-- Voice/video call for whoever's currently at the same table -
+             hidden unless seated (see ShopScene's updateTableProximity /
+             main.js's setupCall). Joining is always an explicit button
+             press, never automatic, since getUserMedia needs a user
+             gesture and the mic/camera permission prompt shouldn't
+             surprise anyone just for walking near a table. -->
+        <section class="chat-panel" id="call-panel" hidden>
+          <header>
+            <span class="icon"><svg
+  class="lucide lucide-phone"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M13.832 16.568a1 1 0 0 0 1.213-.303l.355-.465A2 2 0 0 1 17 15h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2A18 18 0 0 1 2 4a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-.8 1.6l-.468.351a1 1 0 0 0-.292 1.233 14 14 0 0 0 6.392 6.384" />
+</svg></span>Table call
+            <span id="call-status" class="call-status"></span>
+            <button type="button" id="call-expand-btn" class="call-expand-btn" title="Pop out call window" aria-label="Pop out call window"><span class="icon icon-only"><svg
+  class="lucide lucide-maximize-2"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M15 3h6v6" />
+  <path d="m21 3-7 7" />
+  <path d="m3 21 7-7" />
+  <path d="M9 21H3v-6" />
+</svg></span></button>
+          </header>
+          <div class="call-tiles" id="call-tiles"></div>
+          <div class="call-controls">
+            <button type="button" id="call-join-btn" data-state="idle"><span class="icon"><svg
+  class="lucide lucide-mic"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M12 19v3" />
+  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+  <rect x="9" y="2" width="6" height="13" rx="3" />
+</svg></span>Join voice</button>
+            <!-- Split buttons: each is a real <button> (~75% width) plus
+                 a borderless caret (~25%) with an invisible native
+                 <select> stacked exactly on top of the caret only, so
+                 clicking the caret opens the browser's own device-list
+                 dropdown while clicking the rest of the pill still hits
+                 the button underneath. Mute -> microphones, Camera ->
+                 cameras (relocated from the old standalone device
+                 picker above the tile grid), Deafen -> speakers/output
+                 devices (via HTMLMediaElement.setSinkId - see
+                 ui/call.js's refreshDevicePicker/applySinkId). Device
+                 labels are blank until the browser has granted the
+                 matching permission at least once. -->
+            <div class="split-btn" id="call-mute-split" data-state="unmuted" hidden>
+              <button type="button" id="call-mute-btn" data-state="unmuted"><span class="icon"><svg
+  class="lucide lucide-mic"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M12 19v3" />
+  <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+  <rect x="9" y="2" width="6" height="13" rx="3" />
+</svg></span>Mute mic</button>
+              <div class="split-btn-caret" aria-hidden="true">▾</div>
+              <select id="call-mic-select" class="split-btn-select" aria-label="Microphone"></select>
+            </div>
+            <div class="split-btn" id="call-deafen-split" data-state="hearing" hidden>
+              <button type="button" id="call-deafen-btn" data-state="hearing"><span class="icon"><svg
+  class="lucide lucide-volume-2"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z" />
+  <path d="M16 9a5 5 0 0 1 0 6" />
+  <path d="M19.364 18.364a9 9 0 0 0 0-12.728" />
+</svg></span>Deafen</button>
+              <div class="split-btn-caret" aria-hidden="true">▾</div>
+              <select id="call-speaker-select" class="split-btn-select" aria-label="Speaker"></select>
+            </div>
+            <div class="split-btn" id="call-camera-split" data-state="off" hidden>
+              <button type="button" id="call-camera-btn" data-state="off"><span class="icon"><svg
+  class="lucide lucide-video-off"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M10.66 6H14a2 2 0 0 1 2 2v2.5l5.248-3.062A.5.5 0 0 1 22 7.87v8.196" />
+  <path d="M16 16a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h2" />
+  <path d="m2 2 20 20" />
+</svg></span>Turn on camera</button>
+              <div class="split-btn-caret" aria-hidden="true">▾</div>
+              <select id="call-camera-select" class="split-btn-select" aria-label="Camera"></select>
+            </div>
+          </div>
+          <p class="table-hint" id="call-hint" hidden></p>
+        </section>
+
+        <section class="chat-panel" id="table-chat-panel">
+          <header><span class="icon"><svg
+  class="lucide lucide-armchair"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M19 9V6a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v3" />
+  <path d="M3 16a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5a2 2 0 0 0-4 0v1.5a.5.5 0 0 1-.5.5h-9a.5.5 0 0 1-.5-.5V11a2 2 0 0 0-4 0z" />
+  <path d="M5 18v2" />
+  <path d="M19 18v2" />
+</svg></span><span id="table-chat-title">Walk up to a table</span></header>
+          <div class="chat-log" id="table-chat-log"></div>
+          <form id="table-chat-form" class="chat-form">
+            <input id="table-chat-input" placeholder="Message this table only..." autocomplete="off" disabled />
+            <button type="submit" disabled>Send</button>
+          </form>
+          <p class="table-hint" id="table-chat-hint">
+            Only people sitting at the same table see these messages.
+            Voice/video per table is on the roadmap - see README.
+          </p>
+        </section>
+      </aside>
+    </div>
+
+    <!-- Floating order-alert toasts (see ui/toast.js) - lives outside
+         every screen div above so it stays visible no matter which
+         screen is currently shown. -->
+    <div id="toast-container" class="toast-container" popover="manual" aria-live="polite"></div>
+
+    <!-- Shared confirm dialog (see ui/confirmDialog.js) - replaces plain
+         window.confirm() so a themed, focus-trapped, Esc/backdrop-
+         dismissible <dialog> is reused for every yes/no confirmation in
+         the app instead of the browser's own unstyled popup. -->
+    <dialog id="confirm-dialog" class="app-dialog" closedby="any" aria-labelledby="confirm-dialog-title">
+      <form method="dialog">
+        <h2 id="confirm-dialog-title">Are you sure?</h2>
+        <p id="confirm-dialog-message"></p>
+        <div class="dialog-actions">
+          <button type="submit" value="cancel" class="dialog-cancel">Cancel</button>
+          <button type="submit" value="confirm" id="confirm-dialog-confirm-btn">Confirm</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- Account-deletion dialog - replaces the old window.prompt() +
+         window.confirm() pair (see ui/settings.js) with one themed
+         dialog that collects the optional reason and the confirmation
+         in a single step. -->
+    <dialog id="delete-account-dialog" class="app-dialog" closedby="any" aria-labelledby="delete-account-dialog-title">
+      <form method="dialog">
+        <h2 id="delete-account-dialog-title">Delete account?</h2>
+        <p>This asks an admin to permanently delete your account.</p>
+        <label>
+          Anything you'd like the admins to know? (optional)
+          <textarea id="delete-account-reason" rows="3"></textarea>
+        </label>
+        <div class="dialog-actions">
+          <button type="submit" value="cancel" class="dialog-cancel">Cancel</button>
+          <button type="submit" value="confirm" class="danger">Delete account</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

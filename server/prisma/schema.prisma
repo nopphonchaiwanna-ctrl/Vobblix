@@ -1,0 +1,181 @@
+// Hand-written to match server/migrations/001_init.sql + 002_shop_owner_marketplace.sql
+// exactly, since `prisma db pull` needs to download an engine binary from
+// binaries.prisma.sh and that host is blocked by network policy in this
+// session (both the cloud sandbox and this device's shell) - see the
+// chat for details. Re-run `npx prisma db pull` yourself later (from a
+// normal, unrestricted terminal) any time you want Prisma to verify this
+// file still matches the live database, or after a migration you write
+// by hand (server/migrations/*.sql is still the source of truth - see
+// README's migration workflow).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  displayName  String   @map("display_name")
+  avatarUrl    String?  @map("avatar_url") // plain image URL, same convention as Shop.logoUrl
+  role         String   @default("customer") // customer | shop_owner | admin
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  ownedShops          Shop[]                @relation("ShopOwner")
+  reviewedShops       Shop[]                @relation("ShopReviewer")
+  ownerApplications   ShopOwnerApplication[] @relation("Applicant")
+  reviewedApplications ShopOwnerApplication[] @relation("ApplicationReviewer")
+  chatMessages        ChatMessage[]
+  buyerOrders         ShopOrder[]           @relation("Buyer")
+  sellerOrders        ShopOrder[]           @relation("Seller")
+  orderMessages       ShopOrderMessage[]
+  deletionRequests    AccountDeletionRequest[]
+
+  @@map("users")
+}
+
+// Self-service "please delete my account" request - an admin processes
+// it by hand for now (no admin UI yet). See migration 003.
+model AccountDeletionRequest {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  reason    String?
+  status    String   @default("pending") // pending | completed | cancelled
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("account_deletion_requests")
+}
+
+// A user applies once; an admin approves/rejects - kept as its own table
+// (not a status column on users) so history/rejection reasons survive a
+// re-application. See migrations/002 for the one-pending-per-user index.
+model ShopOwnerApplication {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId           String    @map("user_id") @db.Uuid
+  message          String?
+  status           String    @default("pending") // pending | approved | rejected
+  reviewedBy       String?   @map("reviewed_by") @db.Uuid
+  reviewedAt       DateTime? @map("reviewed_at") @db.Timestamptz
+  rejectionReason  String?   @map("rejection_reason")
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  applicant User  @relation("Applicant", fields: [userId], references: [id], onDelete: Cascade)
+  reviewer  User? @relation("ApplicationReviewer", fields: [reviewedBy], references: [id], onDelete: SetNull)
+
+  @@map("shop_owner_applications")
+}
+
+// scene_type: a static scenes/*.js id (ad-hoc "type any code" shops) or
+// the OWNED_SCENE_TYPE sentinel "owned" (deliberate owner-created shops -
+// see server/src/scenes/index.js's resolveScene()). owner_user_id is
+// NULL for every ad-hoc shop; only the owner-created path sets it.
+model Shop {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code              String    @unique
+  name              String
+  sceneType         String    @default("default") @map("scene_type")
+  ownerUserId       String?   @map("owner_user_id") @db.Uuid
+  status            String    @default("published") // draft | pending_review | published | rejected | suspended
+  layoutTemplateId  String?   @map("layout_template_id")
+  theme             String    @default("default")
+  assets            Json      @default("{}")
+  logoUrl           String?   @map("logo_url")
+  description       String?
+  reviewedBy        String?   @map("reviewed_by") @db.Uuid
+  reviewedAt        DateTime? @map("reviewed_at") @db.Timestamptz
+  rejectionReason   String?   @map("rejection_reason")
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  owner        User?              @relation("ShopOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
+  reviewer     User?              @relation("ShopReviewer", fields: [reviewedBy], references: [id], onDelete: SetNull)
+  chatMessages ChatMessage[]
+  listings     ShopListing[]
+  orders       ShopOrder[]
+
+  @@map("shops")
+}
+
+// table_id NULL = shop-wide message; otherwise scoped to one table (e.g.
+// "table-1"). author_name is denormalized so history reads right even if
+// the account is later renamed/removed.
+model ChatMessage {
+  id         BigInt   @id @default(autoincrement())
+  shopId     String   @map("shop_id") @db.Uuid
+  tableId    String?  @map("table_id")
+  userId     String?  @map("user_id") @db.Uuid
+  authorName String   @map("author_name")
+  text       String
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  shop Shop  @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("chat_messages")
+}
+
+model ShopListing {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  shopId      String   @map("shop_id") @db.Uuid
+  title       String
+  description String?
+  priceCents  Int      @map("price_cents")
+  currency    String   @default("THB")
+  photoUrl    String?  @map("photo_url")
+  stockQty    Int?     @map("stock_qty") // NULL = not tracked
+  status      String   @default("active") // active | sold_out | archived
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @default(now()) @map("updated_at") @db.Timestamptz
+
+  shop   Shop        @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  orders ShopOrder[]
+
+  @@map("shop_listings")
+}
+
+// v1 has no real payment processing - a buyer opens an order (a
+// persisted chat thread) to arrange the sale by hand with the owner.
+// payment_provider/payment_reference are unused today but reserved for a
+// future payment-gateway integration (see README roadmap).
+model ShopOrder {
+  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  listingId           String   @map("listing_id") @db.Uuid
+  shopId              String   @map("shop_id") @db.Uuid
+  buyerId             String   @map("buyer_id") @db.Uuid
+  sellerId            String   @map("seller_id") @db.Uuid
+  quantity            Int      @default(1)
+  priceCentsSnapshot  Int      @map("price_cents_snapshot") // listing price at time of inquiry
+  status              String   @default("inquiry") // inquiry | confirmed | completed | cancelled
+  paymentProvider     String?  @map("payment_provider")
+  paymentReference    String?  @map("payment_reference")
+  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime @default(now()) @map("updated_at") @db.Timestamptz
+
+  listing  ShopListing        @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  shop     Shop               @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  buyer    User               @relation("Buyer", fields: [buyerId], references: [id], onDelete: Cascade)
+  seller   User               @relation("Seller", fields: [sellerId], references: [id], onDelete: Cascade)
+  messages ShopOrderMessage[]
+
+  @@map("shop_orders")
+}
+
+model ShopOrderMessage {
+  id         BigInt   @id @default(autoincrement())
+  orderId    String   @map("order_id") @db.Uuid
+  senderId   String?  @map("sender_id") @db.Uuid
+  authorName String   @map("author_name")
+  text       String
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  order  ShopOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  sender User?     @relation(fields: [senderId], references: [id], onDelete: SetNull)
+
+  @@map("shop_order_messages")
+}

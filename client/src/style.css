@@ -1,0 +1,1609 @@
+:root {
+  /* Dark theme (the app's original, fixed palette) - the default
+     whenever #app-topbar's theme toggle hasn't been switched to light
+     yet (see main.js's applyTheme()/getTheme(), backed by
+     src/prefs.js). Semantic names (--surface, --border, --divider, ...)
+     rather than reusing --bg/--panel directly, since a few of these
+     need to move independently when the light override below changes
+     them. */
+  --bg: #1e293b;
+  --panel: #0f172a;
+  --surface: #1e293b;
+  --accent: #38bdf8;
+  --accent-contrast: #06202f;
+  --text: #e2e8f0;
+  --muted: #94a3b8;
+  --border: #334155;
+  --divider: #1f2937;
+  --danger: #f87171;
+  --danger-contrast: #450a0a;
+  --success: #4ade80;
+  --overlay: #0f172aaa;
+  --shadow: #000000a6;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/* Light theme override - only the structural tones that make the page
+   itself read as light/dark change here; --accent/--danger/--success
+   and the two "-contrast" text colors stay the same in both themes,
+   since each of those is always paired with its own fixed partner
+   color (e.g. button background: var(--accent) always pairs with
+   color: var(--accent-contrast)) rather than with the page background. */
+:root[data-theme="light"] {
+  --bg: #f1f5f9;
+  --panel: #ffffff;
+  --surface: #e2e8f0;
+  --text: #1e293b;
+  --muted: #64748b;
+  --border: #cbd5e1;
+  --divider: #e2e8f0;
+  --shadow: #0f172a33;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* #lobby and #game-screen both set `display: flex` via an ID selector,
+   which otherwise beats the browser default `[hidden] { display: none }`
+   (ID specificity > attribute specificity). This makes sure toggling the
+   `hidden` attribute from JS always actually hides the element. */
+[hidden] {
+  display: none !important;
+}
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* ---------- Lobby ---------- */
+
+#lobby {
+  height: 100%;
+  display: flex;
+  /* Top-aligned, not vertically centered - the login card and the
+     "Published shops" list next to it are rarely the same height (an
+     empty/short shop list vs. a tall one), and centering two
+     different-height cards against each other is what made the row
+     read as "off" rather than like one balanced layout. */
+  align-items: flex-start;
+  justify-content: center;
+}
+
+.lobby-card {
+  background: var(--panel);
+  border-radius: 16px;
+  padding: 32px;
+  width: 320px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+}
+
+.lobby-card h1 {
+  margin: 0 0 4px;
+}
+
+.subtitle {
+  color: var(--muted);
+  margin: 0 0 20px;
+  font-size: 14px;
+}
+
+.lobby-card label {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 14px;
+}
+
+.lobby-card input {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 14px;
+}
+
+.hint {
+  font-size: 12px;
+  color: var(--muted);
+  margin: -6px 0 16px;
+}
+
+/* Live per-rule password-strength feedback - see
+   ui/passwordChecklist.js, which toggles .met/.unmet on each <li> as
+   the user types (border-color below just gives a quick overall
+   glance from :user-invalid/:user-valid; it can't say *which* rule
+   failed, the checklist is what actually answers that). */
+.lobby-card input:user-invalid,
+.wide-card form input:user-invalid {
+  border-color: var(--danger);
+}
+
+.lobby-card input:user-valid,
+.wide-card form input:user-valid {
+  border-color: var(--success);
+}
+
+.password-rules {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 12px;
+}
+
+/* Quiet by default - don't nag with the full rule list. Only a rule
+   that's currently failing pops into view (see ui/passwordChecklist.js
+   for the .met/.unmet toggling); a satisfied or not-yet-touched rule
+   stays hidden entirely. */
+.password-rules li {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 4px 8px 4px 6px;
+  border-radius: 6px;
+  /* --surface already contrasts against the card's own --panel
+     background in both themes (see .lobby-card input's background,
+     same token) - unlike --danger-contrast, it isn't hardcoded to the
+     same near-black red in light mode, so the chip actually reads as
+     "on top of the card" instead of a dark smudge on a light card. */
+  background: var(--surface);
+  border-left: 3px solid var(--danger);
+  color: var(--danger);
+}
+
+.password-rules li .icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.password-rules li.unmet {
+  display: flex;
+  animation: rule-pop-in 0.18s ease-out;
+}
+
+@keyframes rule-pop-in {
+  from {
+    transform: scale(0.85) translateY(-4px);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .password-rules li.unmet {
+    animation: none;
+  }
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-weight: 600;
+  padding: 10px 16px;
+  font-size: 14px;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.error {
+  color: var(--danger);
+  font-size: 13px;
+}
+
+.notice {
+  color: var(--success);
+  font-size: 13px;
+}
+
+/* A button that should read as a text link (Forgot password?, Resend
+   verification email, Back to log in) rather than a boxed action -
+   sits inline under the auth forms without competing with the actual
+   submit button. */
+.link-button {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  font-weight: 500;
+  font-size: 13px;
+  text-align: center;
+  text-decoration: underline;
+}
+
+/* ---------- Auth screen ---------- */
+
+#auth {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.auth-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 18px;
+  background: var(--surface);
+  border-radius: 8px;
+  padding: 4px;
+}
+
+.auth-tab {
+  flex: 1;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 600;
+  padding: 8px;
+  border-radius: 6px;
+}
+
+.auth-tab.active {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.auth-form button[type="submit"] {
+  width: 100%;
+  margin-top: 4px;
+}
+
+/* Lobby/auth cards can stack a primary action with a lower-emphasis one
+   (e.g. "Enter shop" + "Log out") - the secondary button reads as an
+   escape hatch, not a second thing to decide between. */
+button.secondary {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  font-weight: 500;
+}
+
+/* ---------- Game screen ---------- */
+
+#game-screen {
+  display: flex;
+  height: 100%;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 16px;
+  padding: 16px;
+  width: fit-content;
+  margin: 0 auto;
+}
+
+#game {
+  flex-shrink: 0;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+/* Floats over the top-left corner of the canvas - opaque panel
+   background (not the usual transparent topbar-button style) since
+   this sits directly on top of whatever the shop floor is rendering,
+   which the theme can't account for. Icon-only - the "Leave shop"
+   label lives in its title/aria-label instead (shown as a native
+   tooltip on hover/hold), not as visible text. */
+.leave-shop-btn {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 20px var(--shadow);
+}
+
+.leave-shop-btn:hover {
+  background: var(--surface);
+  border-color: var(--accent);
+}
+
+#chat-panels {
+  width: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 700px;
+}
+
+.chat-panel {
+  background: var(--panel);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.chat-panel header {
+  padding: 10px 12px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--divider);
+  font-size: 14px;
+}
+
+#shop-name-label {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+/* ---------- Voice roster (who's in this table's call) ----------
+   Deliberately plain text/DOM rows, not video tiles - the tile grid
+   below resizes/reflows around whoever has their camera on, which made
+   audio-only participants hard to spot once a video tile appeared. This
+   list is always laid out the same way regardless of video. */
+.voice-roster {
+  padding: 8px 12px 0;
+}
+
+.voice-roster-label {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.voice-roster-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.voice-roster-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 12px;
+  outline: 2px solid transparent;
+  outline-offset: -2px;
+  transition: outline-color 0.1s ease;
+}
+
+.voice-roster-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--success);
+  flex-shrink: 0;
+}
+
+.voice-roster-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.voice-roster-badge {
+  font-size: 12px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+/* Speaking = a green ring around the whole chip, Discord-style. Driven
+   by webrtc/callManager.js's Web Audio volume analysis (see
+   attachSpeakingDetector), not by the mic-muted flag - those are
+   independent (you can be unmuted and silent). */
+.voice-roster-chip.speaking {
+  outline-color: var(--success);
+}
+
+.chat-log {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 12px;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.chat-msg .from {
+  color: var(--accent);
+  font-weight: 600;
+  margin-right: 4px;
+}
+
+/* Only messages from someone other than yourself get a user-id (see
+   ui/chat.js's appendMessage) - that's what makes the name clickable to
+   block them. */
+.chat-msg .from[data-user-id] {
+  cursor: pointer;
+}
+
+.chat-msg .from[data-user-id]:hover {
+  text-decoration: underline;
+}
+
+.chat-msg.system {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.chat-form {
+  display: flex;
+  gap: 6px;
+  padding: 10px;
+  border-top: 1px solid var(--divider);
+}
+
+.chat-form input {
+  flex: 1;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.table-hint {
+  font-size: 11px;
+  color: var(--muted);
+  padding: 0 12px 10px;
+  margin: 0;
+}
+
+/* ---------- Call panel ---------- */
+
+.call-status {
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 12px;
+}
+
+.call-tiles {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 12px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  align-content: start;
+}
+
+.call-tile {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  background: var(--surface);
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.call-tile video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: none;
+}
+
+/* Audio-only (or video not connected yet) shows a mic icon instead of a
+   blank/frozen video box. */
+.call-tile-avatar {
+  font-size: 22px;
+}
+
+.call-tile.has-video video {
+  display: block;
+}
+
+.call-tile.has-video .call-tile-avatar {
+  display: none;
+}
+
+.call-tile.video-pending .call-tile-avatar {
+  opacity: 0.5;
+}
+
+.call-tile-name {
+  position: absolute;
+  left: 4px;
+  bottom: 4px;
+  font-size: 11px;
+  background: var(--overlay);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.call-tile.is-local {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* Speaking overrides the is-local accent outline with the same green
+   used by .voice-roster-chip.speaking, so the two stay visually
+   consistent wherever a participant shows up. */
+.call-tile.speaking {
+  outline: 2px solid var(--success);
+  outline-offset: -2px;
+}
+
+.settings-avatar-field {
+  display: block;
+  margin-bottom: 14px;
+}
+
+.settings-avatar-field-label {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.settings-avatar-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.settings-avatar-preview,
+.settings-avatar-fallback {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.settings-avatar-preview {
+  object-fit: cover;
+  border: 1px solid var(--border);
+}
+
+.settings-avatar-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-size: 28px;
+}
+
+.settings-avatar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.settings-avatar-actions button {
+  font-size: 13px;
+  padding: 7px 12px;
+}
+
+.call-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px;
+  border-top: 1px solid var(--divider);
+}
+
+/* Mute/Deafen/Camera each combine a real <button> with a device
+   picker into one seamless pill: the button takes ~75% of the width,
+   the remaining ~25% is a caret with an invisible native <select>
+   stacked exactly on top of it (clicking the caret opens the browser's
+   own device list; clicking the left 75% still hits the button
+   underneath, since the select only covers the right strip). No
+   divider between the two - same background, so it reads as one
+   piece. Takes the same flex slot a plain .call-controls button
+   would. */
+.split-btn {
+  position: relative;
+  display: flex;
+  flex: 1 1 calc(50% - 6px);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* Beats the later, lower-specificity ".call-controls button" rule
+   (class+element) with class+class+element, same trick the old
+   ID-based selector relied on, so these keep their 75% width instead
+   of falling back to the generic 50%-ish button sizing. */
+.call-controls .split-btn > button {
+  flex: 0 0 75%;
+  width: auto;
+  border-radius: 0;
+}
+
+.split-btn-caret {
+  flex: 0 0 25%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-size: 13px;
+}
+
+/* Mirrors the button's own "active/alert" red (muted mic, deafened)
+   so the caret reads as one continuous pill with the button rather
+   than two different controls - see ui/call.js's showMicMuted() /
+   showDeafened(), which set this dataset on the wrapper alongside the
+   button's own. Camera's split button stays the neutral accent color
+   in both states, since "camera on" isn't an alert state. */
+#call-mute-split[data-state="muted"] .split-btn-caret,
+#call-deafen-split[data-state="deafened"] .split-btn-caret {
+  background: var(--danger);
+  color: var(--danger-contrast);
+}
+
+.split-btn-select {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 25%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.call-controls button {
+  flex: 1 1 calc(50% - 6px);
+  font-size: 12px;
+  padding: 8px 6px;
+}
+
+/* Mic-muted/deafened read as "off/alert" states, same treatment as the
+   existing button.danger (leave call) - not the accent "everything's
+   fine" color. */
+#call-mute-btn[data-state="muted"],
+#call-deafen-btn[data-state="deafened"] {
+  background: var(--danger);
+  color: var(--danger-contrast);
+}
+
+.call-tile-badges {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: flex;
+  gap: 3px;
+}
+
+.call-tile-badge {
+  font-size: 12px;
+  background: var(--overlay);
+  border-radius: 4px;
+  padding: 2px 3px;
+  line-height: 1;
+}
+
+button.danger {
+  background: var(--danger);
+  color: var(--danger-contrast);
+}
+
+/* The header lays out as "label ... status ... expand button", with the
+   button pinned to the far right via margin-left: auto regardless of how
+   long the status text is. */
+#call-panel header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.call-expand-btn {
+  margin-left: auto;
+  flex: 0 0 auto;
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 7px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.call-expand-btn:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+/* ---------- Call panel: expanded (popped-out) state ----------
+   Toggled by ui/call.js's expand()/collapse(). Instead of a real OS
+   window (which would need to hand MediaStream objects across a second
+   window/document), this blows the same panel up into a large floating
+   overlay above the game, with a click-outside backdrop - simpler and
+   more reliable than window.open() for video. */
+/* Positions #call-panel.expanded relative to the game area instead of
+   the viewport - see the rule below. */
+#game-screen {
+  position: relative;
+}
+
+#call-panel.expanded {
+  position: absolute;
+  /* Matches #game-screen's own padding/gap (16px) plus the sidebar's
+     width (300px), so this covers exactly the #game canvas's box and
+     nothing else - #chat-panels (shop/table chat, listings) stays
+     visible and clickable to the right of it. */
+  top: 16px;
+  left: 16px;
+  right: 332px;
+  bottom: 16px;
+  z-index: 50;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.65);
+}
+
+#call-panel.expanded header {
+  padding: 16px 20px;
+  font-size: 16px;
+}
+
+/* Capped (not `1fr`) on purpose: with `1fr`, a single participant's
+   tile would stretch to fill the entire grid - both the column track
+   and the row track - leaving one giant mostly-empty box with a tiny
+   icon lost in the middle (aspect-ratio on .call-tile only sizes the
+   tile itself, it can't stop the grid track around it from expanding).
+   Capping both axes keeps every tile close to its natural 4:3 size
+   regardless of how many people are in the call, packed to the start
+   (the grid's default justify-content) rather than spread out. */
+#call-panel.expanded .call-tiles {
+  grid-template-columns: repeat(auto-fit, minmax(240px, 360px));
+  grid-auto-rows: minmax(160px, 270px);
+  justify-content: start;
+  padding: 20px;
+  gap: 16px;
+}
+
+#call-panel.expanded .call-tile-avatar {
+  font-size: 52px;
+}
+
+#call-panel.expanded .call-tile-name {
+  font-size: 14px;
+  padding: 4px 10px;
+}
+
+#call-panel.expanded .call-tile-badge {
+  font-size: 15px;
+  padding: 3px 5px;
+}
+
+#call-panel.expanded .call-controls {
+  padding: 14px 20px;
+  flex-wrap: nowrap;
+}
+
+#call-panel.expanded .call-controls button {
+  flex: 1;
+  font-size: 14px;
+  padding: 10px;
+}
+
+/* ---------- Marketplace: lobby extras, owner dashboard, admin panel,
+   orders ----------
+   Reuses .lobby-card/.hint/.error/button patterns from the lobby/auth
+   screens above instead of inventing a new visual language - these are
+   all "one more card with a form or a list in it". */
+
+#lobby {
+  flex-wrap: wrap;
+  gap: 20px;
+  padding: 24px;
+  box-sizing: border-box;
+}
+
+.wide-card {
+  /* Was a fixed 420px - read as a small, mobile-sized card floating in
+     a sea of empty space on an actual desktop screen. These panels
+     (settings/orders/admin/owner-dashboard/order-thread) are full
+     "pages" in their own right, not a modal dialog like the
+     login/register card, so they should use most of the viewport
+     instead of staying card-sized. */
+  width: min(1040px, 94vw);
+}
+
+/* ...except in the lobby, where .wide-card is the "Published shops"
+   list sitting *next to* the small 320px login card (.lobby-card),
+   not standing alone as a full page - the 1040px width above would
+   dwarf it and throw the whole row out of proportion. Flexes to fill
+   whatever room is left next to the login card instead, capped so it
+   doesn't stretch absurdly wide on its own when the list is short. */
+#lobby .wide-card {
+  width: auto;
+  flex: 1 1 480px;
+  max-width: 640px;
+}
+
+/* Full-width row above the two lobby cards (login + published shops) -
+   flex: 1 1 100% forces it onto its own line since #lobby is a
+   flex-wrap row, without needing a separate wrapper element. Empty
+   (no height) until renderLobbyStats() has tiles to show. */
+.lobby-stats {
+  flex: 1 1 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  max-width: 1040px;
+}
+
+.stat-tile {
+  flex: 1 1 200px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--panel);
+  border-radius: 12px;
+  padding: 14px 18px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+}
+
+.stat-tile-icon {
+  font-size: 22px;
+  flex-shrink: 0;
+}
+
+.stat-tile-value {
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.stat-tile-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.lobby-links {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 14px 0 4px;
+}
+
+.lobby-links .secondary {
+  width: 100%;
+  margin-top: 0;
+}
+
+#owner-dashboard,
+#admin-panel,
+#orders-panel,
+#order-thread,
+#settings-panel {
+  min-height: 100%;
+  display: flex;
+  justify-content: center;
+  padding: 32px 16px;
+  box-sizing: border-box;
+}
+
+.back-btn {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  padding: 6px 12px;
+  font-size: 13px;
+  margin-bottom: 14px;
+}
+
+.panel-subhead {
+  font-size: 14px;
+  margin: 20px 0 8px;
+  color: var(--muted);
+}
+
+.wide-card form label {
+  margin-bottom: 12px;
+}
+
+.wide-card form input,
+.wide-card form select {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  box-sizing: border-box;
+}
+
+/* Generic row-list used for: published shops, owner's listings, admin
+   review queues, and the orders inbox. Each row is a flex line with a
+   label/meta block that grows and a tight cluster of action buttons. */
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.list-empty {
+  color: var(--muted);
+  font-size: 13px;
+  font-style: italic;
+}
+
+.row {
+  background: var(--surface);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Published-shops rows only - a small thumbnail so the list isn't just
+   stacked text (see main.js's renderPublishedShops()). Falls back to
+   an emoji tile when a shop has no logo_url, same pattern as the
+   avatar fallback elsewhere. */
+.shop-logo,
+.shop-logo-fallback {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.shop-logo {
+  object-fit: cover;
+  border: 1px solid var(--border);
+}
+
+.shop-logo-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--border);
+  font-size: 18px;
+}
+
+.row-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.row-title {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.row-meta {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.row-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.row-actions button {
+  font-size: 12px;
+  padding: 6px 10px;
+}
+
+.status-pill {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--border);
+  color: var(--muted);
+}
+
+.status-pill.pending_review,
+.status-pill.pending,
+.status-pill.inquiry {
+  background: #78350f;
+  color: #fde68a;
+}
+
+.status-pill.published,
+.status-pill.approved,
+.status-pill.confirmed,
+.status-pill.completed,
+.status-pill.active {
+  background: #14532d;
+  color: #bbf7d0;
+}
+
+.status-pill.rejected,
+.status-pill.cancelled {
+  background: #7f1d1d;
+  color: #fecaca;
+}
+
+.listings-panel-list {
+  padding: 10px 12px;
+  overflow-y: auto;
+}
+
+.order-actions {
+  display: flex;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.order-actions button {
+  font-size: 13px;
+}
+
+.order-thread-log {
+  height: 280px;
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+  margin: 10px 0;
+}
+
+.order-thread-form {
+  padding: 0;
+  border: none;
+}
+
+/* ---------- Default top bar (#app-topbar) ----------
+   Sits as the very first element in <body>, before any of the
+   full-screen views (#auth/#lobby/#game-screen/etc.) - being a normal
+   (non-absolute) element, it pushes whichever view is currently shown
+   down by its own height, and `sticky` just keeps it pinned during any
+   scrolling within that view. Hidden only on #auth (no account yet);
+   main.js toggles it alongside #auth/#lobby. */
+.app-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--divider);
+}
+
+.topbar-brand {
+  background: transparent;
+  color: var(--text);
+  font-weight: 700;
+  font-size: 15px;
+  padding: 6px 8px;
+}
+
+.topbar-brand:hover {
+  color: var(--accent);
+}
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.topbar-theme-toggle {
+  background: transparent;
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1;
+  padding: 6px 8px;
+  border-radius: 8px;
+}
+
+.topbar-theme-toggle:hover {
+  background: var(--surface);
+}
+
+.topbar-profile {
+  position: relative;
+}
+
+.topbar-profile-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 500;
+  font-size: 13px;
+  padding: 5px 10px 5px 6px;
+  border-radius: 999px;
+}
+
+.topbar-avatar,
+.topbar-avatar-fallback {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.topbar-avatar {
+  object-fit: cover;
+}
+
+.topbar-avatar-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--border);
+  font-size: 14px;
+}
+
+.topbar-name {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topbar-caret {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.topbar-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 200px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 6px;
+  box-shadow: 0 12px 30px var(--shadow);
+}
+
+.topbar-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  color: var(--text);
+  font-weight: 500;
+  font-size: 13px;
+  padding: 8px 10px;
+  border-radius: 6px;
+}
+
+.topbar-menu-item:hover {
+  background: var(--surface);
+}
+
+.topbar-menu-item-danger {
+  color: var(--danger);
+}
+
+.topbar-menu-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 6px 2px;
+}
+
+/* ---------- Order-alert toasts (#toast-container, see ui/toast.js) ---------- */
+.toast-container {
+  /* [popover] elements get the browser's own default box model and
+     centered position (border, padding, opaque background, and
+     inset: 0 + margin: auto - the same "center it" trick <dialog>
+     uses). All reset here first so the popover-enabled container
+     renders exactly like the plain fixed div it used to be: invisible
+     itself, pinned to the bottom-right corner, only the .toast
+     children inside have any visible box. */
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  overflow: visible;
+  inset: auto;
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 8px;
+  max-width: min(360px, calc(100vw - 32px));
+  /* Fallback stacking for browsers without the Popover API (toast.js's
+     showPopover()/hidePopover() calls are no-ops there, so this plain
+     div needs the old z-index trick to stay on top). Harmless when
+     popover IS supported - a shown [popover] renders in the top layer
+     regardless of z-index. */
+  z-index: 500;
+}
+
+.toast {
+  position: relative;
+  background: var(--panel);
+  /* [popover] elements default to color: CanvasText (a system color
+     tied to the OS theme, not this app's own light/dark toggle) -
+     explicit here so toast text doesn't go black-on-dark-navy when the
+     container's own color inheritance can't be relied on. */
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  /* Close button now floats outside the box (top/right: -11px),
+     so it no longer needs reserved space on the right - padding is
+     symmetric like the other sides. */
+  padding: 12px 14px;
+  font-size: 14px;
+  line-height: 1.4;
+  box-shadow: 0 12px 30px var(--shadow);
+  animation: toast-in 0.15s ease-out;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.toast.leaving {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    transition: none;
+  }
+}
+
+.toast.clickable {
+  cursor: pointer;
+}
+
+.toast.clickable:hover {
+  border-color: var(--accent);
+}
+
+.toast-close {
+  position: absolute;
+  /* Deliberately spills past the toast's corner, like a badge sitting
+     on its own layer - centered on the corner point (half the 22px
+     circle inside the card, half outside it). */
+  top: -11px;
+  right: -11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1;
+  border-radius: 50%;
+}
+
+.toast-close:hover {
+  background: var(--border);
+  color: var(--text);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ---------- Toggle switch (Settings > Notifications) ---------- */
+
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 40px;
+  height: 22px;
+  flex-shrink: 0;
+}
+.switch input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  margin: 0;
+  cursor: pointer;
+}
+.switch-track {
+  position: absolute;
+  inset: 0;
+  background: var(--border);
+  border-radius: 999px;
+  transition: background 0.15s ease;
+  pointer-events: none;
+}
+.switch-track::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  background: #e2e8f0;
+  border-radius: 50%;
+  transition: transform 0.15s ease;
+}
+.switch input:checked + .switch-track {
+  background: var(--accent);
+}
+.switch input:checked + .switch-track::before {
+  transform: translateX(18px);
+}
+.switch input:focus-visible + .switch-track {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---------- Topbar notification bell (#topbar-notif) ---------- */
+
+.topbar-notif {
+  position: relative;
+}
+
+.topbar-notif-btn {
+  position: relative;
+  background: transparent;
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1;
+  padding: 6px 8px;
+  border-radius: 8px;
+}
+
+.topbar-notif-btn:hover {
+  background: var(--surface);
+}
+
+.topbar-notif-badge {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: var(--danger-contrast);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 15px;
+  text-align: center;
+}
+
+.topbar-notif-menu {
+  min-width: 280px;
+  max-width: 320px;
+  max-height: 360px;
+  overflow-y: auto;
+  /* .topbar-menu's base padding (6px) is shared with the profile
+     dropdown, whose items have their own 8px/10px padding to pad
+     things out. This menu's empty-state text sits directly on that
+     6px with nothing else, which read as too tight against the
+     corner - a bit more room just for this one. */
+  padding: 10px;
+}
+
+/* Overrides .topbar-menu's position:absolute - once popover="auto"
+   promotes this to the top layer, it's detached from #topbar-notif's
+   position:relative ancestor, so "top: calc(100% + 6px); right: 0"
+   would resolve against the viewport instead and land in the wrong
+   place. Positioned via JS instead (see the "toggle" listener in
+   main.js) since CSS anchor positioning isn't broadly supported in
+   Chrome/Firefox yet. Selector needs to win over .topbar-menu
+   regardless of source order, hence the id. */
+#topbar-notif-menu {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  top: 0;
+  left: 0;
+}
+
+.topbar-notif-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  color: var(--text);
+  font-weight: 400;
+  font-size: 13px;
+  padding: 8px 10px;
+  border-radius: 6px;
+}
+
+.topbar-notif-item:hover {
+  background: var(--surface);
+}
+
+.topbar-notif-item.unread {
+  font-weight: 600;
+}
+
+.topbar-notif-time {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 400;
+  margin-top: 2px;
+}
+
+/* ---------- Icons (Lucide, via src/ui/icons.js's icon()) ---------- */
+/* Wraps every icon so size/alignment lives here instead of at each of
+   the many call sites that build one. 1em/1em makes an icon scale with
+   whatever text size surrounds it (same as the emoji it replaced), and
+   the SVGs themselves use stroke="currentColor" so they pick up
+   var(--text)/var(--danger)/etc. automatically through normal CSS
+   inheritance - no separate icon color rules needed, including across
+   the light/dark theme toggle. */
+.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1em;
+  height: 1em;
+  vertical-align: -0.15em;
+  flex-shrink: 0;
+}
+
+.icon svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* A little breathing room when an icon is immediately followed by
+   text in the same line (the overwhelming majority of call sites). A
+   handful of buttons are icon-only (the theme toggle, the notif bell,
+   a toast's close button, back buttons, the call expand/collapse
+   button) - pass icon("name", "icon-only") at those call sites so the
+   icon stays centered instead of looking shoved left by unused margin. */
+.icon {
+  margin-right: 0.3em;
+}
+
+.icon.icon-only {
+  margin-right: 0;
+}
+
+/* Shared app dialog (see ui/confirmDialog.js) - replaces window.confirm()
+   / window.prompt() with a themed <dialog>. showModal() gives focus
+   trapping and Esc-to-close for free; closedby="any" (set in the HTML)
+   adds backdrop-click dismiss too - see confirmDialog.js for the
+   Safari fallback where closedby isn't supported yet. */
+dialog.app-dialog {
+  background: var(--panel);
+  color: var(--text);
+  border: none;
+  border-radius: 16px;
+  padding: 24px;
+  width: min(360px, calc(100vw - 32px));
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+}
+
+dialog.app-dialog::backdrop {
+  background: var(--overlay);
+}
+
+dialog.app-dialog h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+dialog.app-dialog p {
+  margin: 0 0 20px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+dialog.app-dialog label {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 20px;
+}
+
+dialog.app-dialog textarea {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.dialog-cancel {
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+
+/* Custom scrollbar for the app's scrollable panels - matches the
+   theme instead of the OS default gray (see modern-web-guidance's
+   customize-scrollbar-color-and-thickness guide). */
+.chat-log,
+.call-tiles,
+.listings-panel-list,
+.topbar-notif-menu {
+  scrollbar-color: var(--muted) var(--border);
+  scrollbar-width: thin;
+}
+
+/* Legacy fallback for browsers that don't know scrollbar-color yet
+   (older Safari). Colors are duplicated rather than left to the
+   browser to infer, since there's nothing to inherit them from here. */
+@supports not (scrollbar-color: auto) {
+  .chat-log::-webkit-scrollbar,
+  .call-tiles::-webkit-scrollbar,
+  .listings-panel-list::-webkit-scrollbar,
+  .topbar-notif-menu::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  .chat-log::-webkit-scrollbar-thumb,
+  .call-tiles::-webkit-scrollbar-thumb,
+  .listings-panel-list::-webkit-scrollbar-thumb,
+  .topbar-notif-menu::-webkit-scrollbar-thumb {
+    background: var(--muted);
+  }
+
+  .chat-log::-webkit-scrollbar-track,
+  .call-tiles::-webkit-scrollbar-track,
+  .listings-panel-list::-webkit-scrollbar-track,
+  .topbar-notif-menu::-webkit-scrollbar-track {
+    background: var(--border);
+  }
+}
+
+/* ---------- View transitions (route changes, see router.js) ---------- */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}

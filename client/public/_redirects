@@ -1,0 +1,6 @@
+# SPA fallback for client-side routing (see src/router.js) - needed so a
+# hard refresh or a shared link on a path like /shop/foo or /settings
+# doesn't 404 on a static host. Cloudflare Pages reads this file
+# automatically; Vite's dev/preview servers already do the equivalent
+# on their own, so this only matters for a deployed build.
+/*    /index.html   200

@@ -1,0 +1,20 @@
+{
+  "name": "vobblix-client",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Walk-around virtual card shop - Phaser 3 client",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "lucide-static": "^1.49.0",
+    "phaser": "^3.80.1",
+    "socket.io-client": "^4.7.5"
+  },
+  "devDependencies": {
+    "vite": "^5.4.10"
+  }
+}
