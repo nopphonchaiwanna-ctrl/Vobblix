@@ -18,8 +18,14 @@
   --danger: #f87171;
   --danger-contrast: #450a0a;
   --success: #4ade80;
+  --success-contrast: #052e16;
   --overlay: #0f172aaa;
   --shadow: #000000a6;
+  /* Fallback until main.js's ResizeObserver measures the real
+     #app-topbar height and overwrites this - see .dashboard-sidebar
+     below for why an accurate value matters (sticky positioning under
+     a topbar whose height isn't otherwise a fixed design token). */
+  --topbar-h: 57px;
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
@@ -279,6 +285,55 @@ button.secondary {
   color: var(--muted);
   border: 1px solid var(--border);
   font-weight: 500;
+}
+
+/* Extra color variants, used by a form's Save/Cancel action bar (see
+   .dashboard-form-actions below) where the default accent-blue
+   "button" / muted ".secondary" pair isn't what was asked for - a
+   green confirm action and a plain white cancel one instead. */
+button.success {
+  background: var(--success);
+  color: var(--success-contrast);
+}
+
+button.white {
+  background: #ffffff;
+  color: #0f172a;
+}
+
+/* Floating Save/Cancel bar pinned to the bottom-right corner of the
+   actual screen (see ownerDashboard.js's Shop profile form) - fixed
+   to the viewport rather than sticky within .dashboard-content's own
+   scroll pane, so it stays put in the corner regardless of how far
+   the form is scrolled, instead of travelling with the content. */
+/* Pill-shaped horizontal bar (not a boxy card) wrapping the colored
+   Save/Cancel buttons - reads as a single floating toolbar rather than
+   two bare buttons sitting directly on the page. */
+.dashboard-form-actions {
+  position: fixed;
+  right: 32px;
+  bottom: 24px;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: var(--panel);
+  box-shadow: 0 10px 40px var(--shadow);
+}
+
+.dashboard-form-actions button {
+  width: auto;
+  margin-top: 0;
+  border-radius: 999px;
+}
+
+@media (max-width: 720px) {
+  .dashboard-form-actions {
+    right: 16px;
+    bottom: 16px;
+  }
 }
 
 /* ---------- Game screen ---------- */
@@ -897,9 +952,11 @@ button.danger {
   margin-top: 0;
 }
 
-#owner-dashboard,
-#admin-panel,
-#orders-panel,
+/* Settings keeps the original floating-card look (a deliberate
+   exception - see the dashboard-shell comment below); orders/order-
+   thread are plain full-width pages (no internal sections to split
+   into a sidebar, so no .dashboard-shell either, just dropped the
+   centering/card treatment - see #orders-panel below). */
 #order-thread,
 #settings-panel {
   min-height: 100%;
@@ -907,6 +964,226 @@ button.danger {
   justify-content: center;
   padding: 32px 16px;
   box-sizing: border-box;
+}
+
+/* ---------- Dashboard shell (owner dashboard, admin panel, orders) ----------
+   Replaces the floating "login card" look (.lobby-card: centered,
+   rounded, drop-shadow box) with a real full-bleed page: a left
+   sidebar for jumping between a page's sections, and a content pane
+   for whichever one is active. Settings keeps the old card look on
+   purpose (explicit scope decision) - everything else that used to
+   share .lobby-card/.wide-card (owner dashboard, admin panel) moved
+   here; orders has no sections to split so it just drops the card
+   treatment without a sidebar (single-item nav would be clutter). */
+#owner-dashboard,
+#admin-panel,
+#orders-panel,
+#events-panel {
+  box-sizing: border-box;
+}
+
+/* Deliberately no forced min-height: 100% here (unlike the old
+   .lobby-card pages) - that was stretching the sidebar to fill the
+   full viewport even when its nav + the content pane were both much
+   shorter than the screen, leaving a big empty var(--panel)-colored
+   rectangle hanging off the bottom of the sidebar that read as a
+   layout bug rather than page background. Auto height + flex's
+   default align-items: stretch instead makes the sidebar match
+   whichever of itself/the content pane is actually taller, and
+   anything shorter than the viewport just ends there, showing the
+   same body background on both sides instead of a lopsided box. */
+.dashboard-shell {
+  display: flex;
+}
+
+/* Sticky + its own height/scroll (rather than scrolling with the
+   page) so the sidebar reads as a fixed app-shell rail that's always
+   fully visible, with the content pane scrolling independently past
+   it - top offset by --topbar-h since #app-topbar is itself a sticky
+   element sitting above it, not an absolutely-positioned overlay, so
+   naive top: 0 would tuck the sidebar's top edge underneath it. */
+.dashboard-sidebar {
+  width: 240px;
+  flex-shrink: 0;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  padding: 24px 16px;
+  box-sizing: border-box;
+  position: sticky;
+  top: var(--topbar-h);
+  height: calc(100vh - var(--topbar-h));
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Last child in the markup now (see index.html) - margin-top: auto in
+   this flex column pushes it down to sit flush at the bottom of the
+   sidebar instead of at the top above the nav. */
+.dashboard-sidebar .back-btn {
+  width: 100%;
+  margin-top: auto;
+}
+
+.dashboard-sidebar-title {
+  font-size: 18px;
+  margin: 4px 0 20px;
+}
+
+.dashboard-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dashboard-nav-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  background: transparent;
+  color: var(--text);
+  font-weight: 500;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 8px;
+}
+
+.dashboard-nav-item:hover {
+  background: var(--surface);
+}
+
+.dashboard-nav-item.active {
+  background: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.dashboard-content {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: calc(100vh - var(--topbar-h));
+  padding: 32px;
+  box-sizing: border-box;
+  overflow-y: auto;
+}
+
+/* Centered rather than left-pinned against the sidebar - at 640px
+   wide and flush-left, a wide monitor left a huge dead void in the
+   bottom-right corner that read as a layout bug rather than empty
+   page background. Centering the (still narrow, for readable form
+   fields) content column makes the leftover space read as deliberate
+   framing instead. */
+.dashboard-content > [data-dashboard-panel] {
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+/* Wider than the plain-form pages above - standings tables and bracket
+   rounds (see eventsPanel.js) read cramped at 640px. */
+#events-panel .dashboard-content > [data-dashboard-panel] {
+  max-width: 900px;
+}
+
+/* Form styling the old .lobby-card/.wide-card ancestors used to
+   provide (see those rules above) - these pages no longer sit inside
+   either, so labels/inputs/selects need their own equivalent here. */
+.dashboard-content label {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+
+.dashboard-content input,
+.dashboard-content select {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 14px;
+}
+
+.dashboard-content input:user-invalid {
+  border-color: var(--danger);
+}
+
+.dashboard-content input:user-valid {
+  border-color: var(--success);
+}
+
+/* Day/hour/minute trio for the event create form's round time limit -
+   grouped with fieldset/legend per form-accessibility guidance, laid
+   out as 3 equal columns rather than the stacked full-width default
+   every other .dashboard-content label/input gets. */
+.duration-fieldset {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 8px 12px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.duration-fieldset legend {
+  padding: 0 4px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.duration-fieldset label {
+  flex: 1;
+  margin-bottom: 0;
+  min-width: 0;
+}
+
+@media (max-width: 480px) {
+  .duration-fieldset {
+    flex-wrap: wrap;
+  }
+  .duration-fieldset label {
+    flex: 1 1 calc(33% - 10px);
+  }
+}
+
+/* Sidebar becomes a horizontal scrollable tab row above the content on
+   narrow screens, rather than squeezing a 240px-wide column onto a
+   phone (same "full width on desktop, but don't break mobile"
+   philosophy as .wide-card elsewhere in this file). */
+@media (max-width: 720px) {
+  .dashboard-shell {
+    flex-direction: column;
+  }
+
+  .dashboard-sidebar {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    position: static;
+    height: auto;
+    overflow-y: visible;
+  }
+
+  .dashboard-sidebar .back-btn {
+    margin-top: 0;
+  }
+
+  .dashboard-content {
+    height: auto;
+    padding: 20px 16px;
+  }
+
+  .dashboard-nav {
+    flex-direction: row;
+    overflow-x: auto;
+  }
+
+  .dashboard-nav-item {
+    width: auto;
+    white-space: nowrap;
+  }
 }
 
 .back-btn {
@@ -1606,4 +1883,20 @@ dialog.app-dialog textarea {
   ::view-transition-new(*) {
     animation: none !important;
   }
+}
+
+/* Plain inline text-button, used by the events panel's "All events"
+   back-to-list link (nested inside the detail view, so it isn't the
+   screen's main .back-btn) - looks like a link, acts like a button. */
+.link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: inherit;
+}
+.link-btn:hover {
+  color: var(--accent-hover, var(--accent));
 }

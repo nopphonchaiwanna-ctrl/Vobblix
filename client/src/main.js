@@ -14,6 +14,7 @@ import { initOwnerDashboard } from "./ui/ownerDashboard.js";
 import { initAdminPanel } from "./ui/adminPanel.js";
 import { initShopListings } from "./ui/shopListings.js";
 import { initSettingsPanel } from "./ui/settings.js";
+import { initEventsPanel } from "./ui/eventsPanel.js";
 import { route, setNotFound, navigate, startRouter } from "./router.js";
 import { showToast } from "./ui/toast.js";
 import { attachPasswordChecklist, attachConfirmPasswordCheck } from "./ui/passwordChecklist.js";
@@ -83,6 +84,18 @@ const lobbyStats = document.getElementById("lobby-stats");
 // of separate buttons on the lobby card only (Settings/My orders/My
 // shop/Admin panel/Log out) - see refreshTopbarMenu()/refreshTopbarProfile().
 const topbar = document.getElementById("app-topbar");
+
+// Keeps --topbar-h (style.css) in sync with the topbar's actual
+// rendered height - not a fixed design-token value, so the
+// dashboard-shell sidebar (owner dashboard/admin panel/orders - see
+// style.css's .dashboard-sidebar) can sit sticky right below it
+// without a hardcoded guess that'd drift out of sync if the topbar's
+// own padding/content ever changes. Also self-corrects once the
+// topbar goes from hidden (the #auth screen, before login) to shown,
+// since a display:none -> visible transition fires a resize entry too.
+new ResizeObserver(([entry]) => {
+  document.documentElement.style.setProperty("--topbar-h", `${entry.contentRect.height}px`);
+}).observe(topbar);
 const topbarBrandBtn = document.getElementById("topbar-brand");
 const topbarProfileBtn = document.getElementById("topbar-profile-btn");
 const topbarMenu = document.getElementById("topbar-menu");
@@ -92,6 +105,7 @@ const topbarName = document.getElementById("topbar-name");
 const topbarMenuSettings = document.getElementById("topbar-menu-settings");
 const topbarMenuOrders = document.getElementById("topbar-menu-orders");
 const topbarMenuMyShop = document.getElementById("topbar-menu-myshop");
+const topbarMenuEvents = document.getElementById("topbar-menu-events");
 const topbarMenuAdmin = document.getElementById("topbar-menu-admin");
 const topbarMenuLogout = document.getElementById("topbar-menu-logout");
 const topbarThemeToggle = document.getElementById("topbar-theme-toggle");
@@ -130,6 +144,10 @@ let activeMainPath = "/lobby";
 let currentGame = null;
 let currentCallTeardown = null;
 let currentShopRoomId = null;
+// The current shop's DB id (from join-shop's ack), so the topbar's
+// Events menu item knows which shop's events to show - null whenever
+// we're not standing in a shop (see leaveShop()).
+let currentShopDbId = null;
 
 const getToken = () => session?.token;
 const getUserId = () => session?.user?.id;
@@ -152,6 +170,7 @@ const ordersPanel = initOrdersPanel({
   orderThread,
   onBack: returnToMainScreen,
 });
+const eventsPanel = initEventsPanel({ getToken, getUserId, onBack: returnToMainScreen });
 const ownerDashboard = initOwnerDashboard({
   getToken,
   onBack: () => {
@@ -159,6 +178,7 @@ const ownerDashboard = initOwnerDashboard({
     if (activeMainPath === "/lobby") refreshLobbyExtras();
   },
   onShopChanged: () => refreshLobbyExtras(),
+  onManageEvents: (shopId) => eventsPanel.open({ shopId }),
 });
 const adminPanel = initAdminPanel({
   getToken,
@@ -335,7 +355,10 @@ function renderPublishedShops(shops) {
             <div class="row-meta">by ${escapeHtml(s.owner_name)} · ${itemCount}</div>
             ${s.description ? `<div class="row-meta">${escapeHtml(s.description)}</div>` : ""}
           </div>
-          <div class="row-actions"><button type="button" data-shop-code="${escapeHtml(s.code)}">Enter</button></div>
+          <div class="row-actions">
+            <button type="button" data-events-shop-id="${s.id}">${icon("trophy")}Events</button>
+            <button type="button" data-shop-code="${escapeHtml(s.code)}">Enter</button>
+          </div>
         </div>`;
     })
     .join("");
@@ -395,6 +418,8 @@ function joinShopByCode(code) {
 publishedShopsList.addEventListener("click", (e) => {
   const code = e.target.dataset.shopCode;
   if (code) joinShopByCode(code);
+  const eventsShopId = e.target.closest("button")?.dataset.eventsShopId;
+  if (eventsShopId) eventsPanel.open({ shopId: eventsShopId });
 });
 
 // Re-derives which lobby buttons/hints to show from the account's
@@ -518,6 +543,10 @@ topbarMenuSettings.addEventListener("click", () => {
 topbarMenuOrders.addEventListener("click", () => {
   closeTopbarMenu();
   navigate("/orders");
+});
+topbarMenuEvents.addEventListener("click", () => {
+  closeTopbarMenu();
+  navigate("/shop-events");
 });
 topbarMenuMyShop.addEventListener("click", () => {
   closeTopbarMenu();
@@ -917,7 +946,7 @@ function enterShop(roomId) {
     }
 
     document
-      .querySelectorAll("#auth, #lobby, #owner-dashboard, #admin-panel, #orders-panel, #order-thread, #settings-panel")
+      .querySelectorAll("#auth, #lobby, #owner-dashboard, #admin-panel, #orders-panel, #order-thread, #settings-panel, #events-panel")
       .forEach((s) => (s.hidden = true));
     gameScreen.hidden = false;
     activeMainPath = `/shop/${encodeURIComponent(payload.roomId)}`;
@@ -945,6 +974,8 @@ function enterShop(roomId) {
     // Only an owner-created marketplace shop has listings - an ad-hoc
     // hangout room's panel just stays hidden (see ui/shopListings.js).
     shopListings.loadForShop({ isOwnedShop: payload.isOwnedShop, shopDbId: payload.shopDbId });
+    currentShopDbId = payload.shopDbId;
+    topbarMenuEvents.hidden = !currentShopDbId;
 
     // Floor size and table layout come entirely from the server (see
     // server/src/scenes/) - the client never hardcodes a shop layout, so
@@ -994,6 +1025,8 @@ function leaveShop() {
   currentGame.destroy(true);
   currentGame = null;
   currentShopRoomId = null;
+  currentShopDbId = null;
+  topbarMenuEvents.hidden = true;
   gameScreen.hidden = true;
 }
 
@@ -1020,7 +1053,7 @@ route("/login", () => {
     return;
   }
   document
-    .querySelectorAll("#lobby, #game-screen, #owner-dashboard, #admin-panel, #orders-panel, #order-thread, #settings-panel")
+    .querySelectorAll("#lobby, #game-screen, #owner-dashboard, #admin-panel, #orders-panel, #order-thread, #settings-panel, #events-panel")
     .forEach((s) => (s.hidden = true));
   topbar.hidden = true;
   authScreen.hidden = false;
@@ -1038,7 +1071,7 @@ route("/verify-email", async () => {
     return;
   }
   document
-    .querySelectorAll("#lobby, #game-screen, #owner-dashboard, #admin-panel, #orders-panel, #order-thread, #settings-panel")
+    .querySelectorAll("#lobby, #game-screen, #owner-dashboard, #admin-panel, #orders-panel, #order-thread, #settings-panel, #events-panel")
     .forEach((s) => (s.hidden = true));
   topbar.hidden = true;
   authScreen.hidden = false;
@@ -1067,7 +1100,7 @@ route("/reset-password", () => {
     return;
   }
   document
-    .querySelectorAll("#lobby, #game-screen, #owner-dashboard, #admin-panel, #orders-panel, #order-thread, #settings-panel")
+    .querySelectorAll("#lobby, #game-screen, #owner-dashboard, #admin-panel, #orders-panel, #order-thread, #settings-panel, #events-panel")
     .forEach((s) => (s.hidden = true));
   topbar.hidden = true;
   authScreen.hidden = false;
@@ -1092,7 +1125,7 @@ route("/lobby", () => {
   }
   leaveShop(); // no-op if we weren't in a shop
   document
-    .querySelectorAll("#owner-dashboard, #admin-panel, #orders-panel, #order-thread, #settings-panel")
+    .querySelectorAll("#owner-dashboard, #admin-panel, #orders-panel, #order-thread, #settings-panel, #events-panel")
     .forEach((s) => (s.hidden = true));
   authScreen.hidden = true;
   lobby.hidden = false;
@@ -1120,7 +1153,7 @@ route("/shop/:roomId", ({ roomId }) => {
     // opened over it) - just make sure it's the one showing, no need to
     // rejoin anything.
     document
-      .querySelectorAll("#auth, #lobby, #owner-dashboard, #admin-panel, #orders-panel, #order-thread, #settings-panel")
+      .querySelectorAll("#auth, #lobby, #owner-dashboard, #admin-panel, #orders-panel, #order-thread, #settings-panel, #events-panel")
       .forEach((s) => (s.hidden = true));
     gameScreen.hidden = false;
     activeMainPath = `/shop/${encodeURIComponent(roomId)}`;
@@ -1144,6 +1177,18 @@ route("/orders", () => {
     return;
   }
   ordersPanel.open();
+});
+
+route("/shop-events", () => {
+  if (!session) {
+    navigate("/login", { replace: true });
+    return;
+  }
+  if (!currentShopDbId) {
+    navigate("/lobby", { replace: true });
+    return;
+  }
+  eventsPanel.open({ shopId: currentShopDbId });
 });
 
 route("/my-shop", () => {

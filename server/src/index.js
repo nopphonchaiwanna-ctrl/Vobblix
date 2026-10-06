@@ -11,6 +11,7 @@ import { ownerApplicationsRouter } from "./routes/ownerApplications.js";
 import { accountRouter } from "./routes/account.js";
 import { adminRouter } from "./routes/admin.js";
 import { shopsRouter } from "./routes/shops.js";
+import { tournamentsRouter } from "./routes/tournaments.js";
 import { createOrdersRouter } from "./routes/orders.js";
 import { findOrCreateShop, insertChatMessage, recentShopMessages, recentTableMessages } from "./db/shops.js";
 import {
@@ -59,6 +60,7 @@ app.use("/owner-applications", ownerApplicationsRouter);
 app.use("/account", accountRouter);
 app.use("/admin", adminRouter);
 app.use("/shops", shopsRouter);
+app.use("/events", tournamentsRouter);
 app.use("/orders", createOrdersRouter(io));
 
 // Every socket must carry a valid account token (see client/src/net/socket.js

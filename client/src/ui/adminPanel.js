@@ -12,6 +12,7 @@ import {
   adminRejectShop,
 } from "../net/api.js";
 import { escapeHtml } from "./format.js";
+import { initDashboardNav } from "./dashboardNav.js";
 
 function el(id) {
   return document.getElementById(id);
@@ -22,6 +23,7 @@ export function initAdminPanel({ getToken, onBack }) {
   const backBtn = el("admin-panel-back");
   const applicationsEl = el("admin-applications-list");
   const shopsEl = el("admin-shops-list");
+  const dashboardNav = initDashboardNav(screen.querySelector(".dashboard-shell"), { defaultSection: "applications" });
 
   async function renderApplications() {
     const { applications } = await adminListApplications(getToken(), "pending");
@@ -102,8 +104,9 @@ export function initAdminPanel({ getToken, onBack }) {
 
   return {
     async open() {
-      document.querySelectorAll("#auth, #lobby, #game-screen, #owner-dashboard, #orders-panel, #order-thread, #settings-panel").forEach((s) => (s.hidden = true));
+      document.querySelectorAll("#auth, #lobby, #game-screen, #owner-dashboard, #orders-panel, #order-thread, #settings-panel, #events-panel").forEach((s) => (s.hidden = true));
       screen.hidden = false;
+      dashboardNav.setActive("applications");
       await Promise.all([renderApplications(), renderShops()]);
     },
   };

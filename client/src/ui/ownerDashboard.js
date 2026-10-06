@@ -12,6 +12,8 @@ import {
   updateListing,
 } from "../net/api.js";
 import { formatTHB, escapeHtml, statusLabel } from "./format.js";
+import { fileToResizedDataUrl } from "./imageUpload.js";
+import { initDashboardNav } from "./dashboardNav.js";
 
 function el(id) {
   return document.getElementById(id);
@@ -25,7 +27,7 @@ const STATUS_HINTS = {
   suspended: "Suspended by an admin.",
 };
 
-export function initOwnerDashboard({ getToken, onBack, onShopChanged }) {
+export function initOwnerDashboard({ getToken, onBack, onShopChanged, onManageEvents }) {
   const screen = el("owner-dashboard");
   const backBtn = el("owner-dashboard-back");
   const statusEl = el("owner-shop-status");
@@ -36,11 +38,20 @@ export function initOwnerDashboard({ getToken, onBack, onShopChanged }) {
   const descInput = el("owner-shop-description");
   const templateSelect = el("owner-shop-template");
   const themeSelect = el("owner-shop-theme");
-  const logoInput = el("owner-shop-logo");
+  const logoPreview = el("owner-shop-logo-preview");
+  const logoFallback = el("owner-shop-logo-fallback");
+  const logoFileInput = el("owner-shop-logo-file");
+  const logoChooseBtn = el("owner-shop-logo-choose-btn");
+  const logoRemoveBtn = el("owner-shop-logo-remove-btn");
+  const logoError = el("owner-shop-logo-error");
   const submitBtn = el("owner-shop-submit");
+  const cancelBtn = el("owner-shop-cancel");
   const formError = el("owner-shop-error");
 
-  const listingsSection = el("owner-listings-section");
+  const navListings = el("owner-nav-listings");
+  const navEvents = el("owner-nav-events");
+  const manageEventsBtn = el("owner-manage-events-btn");
+  const dashboardNav = initDashboardNav(screen.querySelector(".dashboard-shell"), { defaultSection: "profile" });
   const listingsList = el("owner-listings-list");
   const listingForm = el("owner-listing-form");
   const listingTitle = el("listing-title");
@@ -53,6 +64,47 @@ export function initOwnerDashboard({ getToken, onBack, onShopChanged }) {
   let shop = null;
   let listings = [];
   let templatesLoaded = false;
+
+  // The value actually sent as logoUrl on save - starts as whatever
+  // the shop already has, and only changes when a new photo is picked
+  // or "Remove" is clicked. Same picked-from-disk, resized-client-side
+  // pattern as the profile photo in settings.js (shared helper:
+  // imageUpload.js's fileToResizedDataUrl()).
+  let logoValue = "";
+
+  const MAX_LOGO_DIMENSION = 256;
+  const MAX_LOGO_SOURCE_BYTES = 12 * 1024 * 1024; // 12MB raw upload, before resizing
+
+  function setLogoPreview(url) {
+    logoPreview.hidden = !url;
+    logoPreview.src = url || "";
+    logoFallback.hidden = Boolean(url);
+    logoRemoveBtn.hidden = !url;
+  }
+
+  logoChooseBtn.addEventListener("click", () => logoFileInput.click());
+
+  logoFileInput.addEventListener("change", async () => {
+    const file = logoFileInput.files?.[0];
+    logoFileInput.value = ""; // lets the same file be re-picked later (e.g. after Remove)
+    if (!file) return;
+    logoError.hidden = true;
+    try {
+      logoValue = await fileToResizedDataUrl(file, {
+        maxDimension: MAX_LOGO_DIMENSION,
+        maxSourceBytes: MAX_LOGO_SOURCE_BYTES,
+      });
+      setLogoPreview(logoValue);
+    } catch (err) {
+      logoError.textContent = err.message;
+      logoError.hidden = false;
+    }
+  });
+
+  logoRemoveBtn.addEventListener("click", () => {
+    logoValue = "";
+    setLogoPreview("");
+  });
 
   async function loadTemplatesOnce() {
     if (templatesLoaded) return;
@@ -69,14 +121,16 @@ export function initOwnerDashboard({ getToken, onBack, onShopChanged }) {
     descInput.value = shop?.description || "";
     if (shop?.layout_template_id) templateSelect.value = shop.layout_template_id;
     if (shop?.theme) themeSelect.value = shop.theme;
-    logoInput.value = shop?.logo_url || "";
+    logoValue = shop?.logo_url || "";
+    setLogoPreview(logoValue);
     submitBtn.textContent = shop ? "Save changes" : "Create shop & submit for review";
   }
 
   function renderStatus() {
     if (!shop) {
       statusEl.textContent = "You don't have a shop yet - fill in the form below to create one.";
-      listingsSection.hidden = true;
+      navListings.hidden = true;
+      navEvents.hidden = true;
       return;
     }
     let text = STATUS_HINTS[shop.status] || shop.status;
@@ -84,7 +138,11 @@ export function initOwnerDashboard({ getToken, onBack, onShopChanged }) {
       text += ` Reason: ${shop.rejection_reason}`;
     }
     statusEl.textContent = text;
-    listingsSection.hidden = false;
+    // Unlocks the Listings/Events sidebar tabs (nav-item hidden state) -
+    // the panels themselves (listingsSection/eventsSection) are shown/
+    // hidden by dashboardNav based on which tab is active, not here.
+    navListings.hidden = false;
+    navEvents.hidden = false;
   }
 
   function renderListings() {
@@ -123,6 +181,15 @@ export function initOwnerDashboard({ getToken, onBack, onShopChanged }) {
     renderListings();
   }
 
+  // Discards unsaved edits (including a newly-picked-but-not-saved
+  // logo) by just re-running fillForm() off the last server-confirmed
+  // `shop` state - there's nothing else to "undo" since nothing is
+  // sent to the server until Save is actually clicked.
+  cancelBtn.addEventListener("click", () => {
+    fillForm();
+    formError.hidden = true;
+  });
+
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     formError.hidden = true;
@@ -131,7 +198,7 @@ export function initOwnerDashboard({ getToken, onBack, onShopChanged }) {
       description: descInput.value.trim(),
       layoutTemplateId: templateSelect.value,
       theme: themeSelect.value,
-      logoUrl: logoInput.value.trim(),
+      logoUrl: logoValue,
     };
     try {
       if (shop) {
@@ -184,6 +251,10 @@ export function initOwnerDashboard({ getToken, onBack, onShopChanged }) {
     renderListings();
   });
 
+  manageEventsBtn.addEventListener("click", () => {
+    if (shop) onManageEvents?.(shop.id);
+  });
+
   backBtn.addEventListener("click", () => {
     screen.hidden = true;
     onBack?.();
@@ -191,8 +262,9 @@ export function initOwnerDashboard({ getToken, onBack, onShopChanged }) {
 
   return {
     async open() {
-      document.querySelectorAll("#auth, #lobby, #game-screen, #admin-panel, #orders-panel, #order-thread, #settings-panel").forEach((s) => (s.hidden = true));
+      document.querySelectorAll("#auth, #lobby, #game-screen, #admin-panel, #orders-panel, #order-thread, #settings-panel, #events-panel").forEach((s) => (s.hidden = true));
       screen.hidden = false;
+      dashboardNav.setActive("profile");
       await loadTemplatesOnce();
       await refreshFromServer();
     },

@@ -132,6 +132,25 @@
   <polyline points="3.29 7 12 12 20.71 7" />
   <path d="m7.5 4.27 9 5.15" />
 </svg></span>My orders</button>
+            <button type="button" id="topbar-menu-events" class="topbar-menu-item" role="menuitem" hidden><span class="icon"><svg
+  class="lucide lucide-trophy"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M10 14.66V17a1 1 0 0 1-1 1 2 2 0 0 0-2 2v2" />
+  <path d="M14 14.66V17a1 1 0 0 0 1 1 2 2 0 0 1 2 2v2" />
+  <path d="M17.916 10H19.5A2.5 2.5 0 0 0 22 7.5V5a1 1 0 0 0-1-1h-3" />
+  <path d="M4 22h16" />
+  <path d="M6 9a6 6 0 0 0 12 0V3a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1z" />
+  <path d="M6.084 10H4.5A2.5 2.5 0 0 1 2 7.5V5a1 1 0 0 1 1-1h3" />
+</svg></span>Events</button>
             <button type="button" id="topbar-menu-myshop" class="topbar-menu-item" role="menuitem" hidden><span class="icon"><svg
   class="lucide lucide-store"
   xmlns="http://www.w3.org/2000/svg"
@@ -369,23 +388,9 @@
          listings. Only reachable once role === "shop_owner" (see
          main.js's refreshOwnerUI()). -->
     <div id="owner-dashboard" hidden>
-      <div class="lobby-card wide-card">
-        <button type="button" class="back-btn" id="owner-dashboard-back"><span class="icon"><svg
-  class="lucide lucide-arrow-left"
-  xmlns="http://www.w3.org/2000/svg"
-  width="24"
-  height="24"
-  viewBox="0 0 24 24"
-  fill="none"
-  stroke="currentColor"
-  stroke-width="2"
-  stroke-linecap="round"
-  stroke-linejoin="round"
->
-  <path d="m12 19-7-7 7-7" />
-  <path d="M19 12H5" />
-</svg></span>Back</button>
-        <h1><span class="icon"><svg
+      <div class="dashboard-shell">
+        <aside class="dashboard-sidebar">
+          <h1 class="dashboard-sidebar-title"><span class="icon"><svg
   class="lucide lucide-store"
   xmlns="http://www.w3.org/2000/svg"
   width="24"
@@ -401,6 +406,78 @@
   <path d="M17.774 10.31a1.12 1.12 0 0 0-1.549 0 2.5 2.5 0 0 1-3.451 0 1.12 1.12 0 0 0-1.548 0 2.5 2.5 0 0 1-3.452 0 1.12 1.12 0 0 0-1.549 0 2.5 2.5 0 0 1-3.77-3.248l2.889-4.184A2 2 0 0 1 7 2h10a2 2 0 0 1 1.653.873l2.895 4.192a2.5 2.5 0 0 1-3.774 3.244" />
   <path d="M4 10.95V19a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8.05" />
 </svg></span>Manage my shop</h1>
+          <nav class="dashboard-nav">
+            <button type="button" class="dashboard-nav-item active" data-dashboard-section="profile"><span class="icon"><svg
+  class="lucide lucide-store"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M15 21v-5a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v5" />
+  <path d="M17.774 10.31a1.12 1.12 0 0 0-1.549 0 2.5 2.5 0 0 1-3.451 0 1.12 1.12 0 0 0-1.548 0 2.5 2.5 0 0 1-3.452 0 1.12 1.12 0 0 0-1.549 0 2.5 2.5 0 0 1-3.77-3.248l2.889-4.184A2 2 0 0 1 7 2h10a2 2 0 0 1 1.653.873l2.895 4.192a2.5 2.5 0 0 1-3.774 3.244" />
+  <path d="M4 10.95V19a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8.05" />
+</svg></span>Shop profile</button>
+            <button type="button" class="dashboard-nav-item" id="owner-nav-listings" data-dashboard-section="listings" hidden><span class="icon"><svg
+  class="lucide lucide-package"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z" />
+  <path d="M12 22V12" />
+  <polyline points="3.29 7 12 12 20.71 7" />
+  <path d="m7.5 4.27 9 5.15" />
+</svg></span>Listings</button>
+            <button type="button" class="dashboard-nav-item" id="owner-nav-events" data-dashboard-section="events" hidden><span class="icon"><svg
+  class="lucide lucide-trophy"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M10 14.66V17a1 1 0 0 1-1 1 2 2 0 0 0-2 2v2" />
+  <path d="M14 14.66V17a1 1 0 0 0 1 1 2 2 0 0 1 2 2v2" />
+  <path d="M17.916 10H19.5A2.5 2.5 0 0 0 22 7.5V5a1 1 0 0 0-1-1h-3" />
+  <path d="M4 22h16" />
+  <path d="M6 9a6 6 0 0 0 12 0V3a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1z" />
+  <path d="M6.084 10H4.5A2.5 2.5 0 0 1 2 7.5V5a1 1 0 0 1 1-1h3" />
+</svg></span>Events</button>
+          </nav>
+          <button type="button" class="back-btn" id="owner-dashboard-back"><span class="icon"><svg
+  class="lucide lucide-arrow-left"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="m12 19-7-7 7-7" />
+  <path d="M19 12H5" />
+</svg></span>Back</button>
+        </aside>
+        <div class="dashboard-content">
+        <div data-dashboard-panel="profile">
         <p class="hint" id="owner-shop-status"></p>
 
         <form id="owner-shop-form">
@@ -424,15 +501,48 @@
             Theme
             <select id="owner-shop-theme"></select>
           </label>
-          <label>
-            Logo (image URL, optional)
-            <input id="owner-shop-logo" type="url" placeholder="https://..." />
-          </label>
-          <button type="submit" id="owner-shop-submit">Save &amp; submit for review</button>
+          <!-- Shop logo - picked from disk, resized/re-encoded entirely
+               client-side (see ownerDashboard.js), same pattern as the
+               profile-photo field above (#settings-avatar-field): no
+               upload endpoint/file storage needed, just a data: URL
+               saved in shops.logo_url. -->
+          <div class="settings-avatar-field">
+            <span class="settings-avatar-field-label">Shop logo (optional)</span>
+            <div class="settings-avatar-row">
+              <img id="owner-shop-logo-preview" class="settings-avatar-preview" hidden alt="Shop logo preview" />
+              <div id="owner-shop-logo-fallback" class="settings-avatar-fallback"><span class="icon icon-only"><svg
+  class="lucide lucide-store"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M15 21v-5a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v5" />
+  <path d="M17.774 10.31a1.12 1.12 0 0 0-1.549 0 2.5 2.5 0 0 1-3.451 0 1.12 1.12 0 0 0-1.548 0 2.5 2.5 0 0 1-3.452 0 1.12 1.12 0 0 0-1.549 0 2.5 2.5 0 0 1-3.77-3.248l2.889-4.184A2 2 0 0 1 7 2h10a2 2 0 0 1 1.653.873l2.895 4.192a2.5 2.5 0 0 1-3.774 3.244" />
+  <path d="M4 10.95V19a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8.05" />
+</svg></span></div>
+              <div class="settings-avatar-actions">
+                <button type="button" id="owner-shop-logo-choose-btn" class="secondary">Choose photo...</button>
+                <button type="button" id="owner-shop-logo-remove-btn" class="secondary danger" hidden>Remove</button>
+                <input type="file" id="owner-shop-logo-file" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
+              </div>
+            </div>
+            <p id="owner-shop-logo-error" class="error" hidden></p>
+          </div>
+          <div class="dashboard-form-actions">
+            <button type="button" id="owner-shop-cancel" class="white">Cancel</button>
+            <button type="submit" id="owner-shop-submit" class="success">Save &amp; submit for review</button>
+          </div>
         </form>
         <p id="owner-shop-error" class="error" hidden></p>
+        </div>
 
-        <div id="owner-listings-section" hidden>
+        <div data-dashboard-panel="listings" id="owner-listings-section" hidden>
           <h2 class="panel-subhead">Listings</h2>
           <div id="owner-listings-list" class="list"></div>
 
@@ -461,6 +571,13 @@
           </form>
           <p id="owner-listing-error" class="error" hidden></p>
         </div>
+
+        <div data-dashboard-panel="events" id="owner-events-section" hidden>
+          <h2 class="panel-subhead">Events</h2>
+          <p class="hint">Create and run Swiss-round events (with an optional top-cut bracket) for this shop.</p>
+          <button type="button" id="owner-manage-events-btn">Manage events</button>
+        </div>
+        </div>
       </div>
     </div>
 
@@ -468,23 +585,9 @@
          Only reachable once role === "admin" (set with
          server/scripts/set-role.js - there's no self-service path). -->
     <div id="admin-panel" hidden>
-      <div class="lobby-card wide-card">
-        <button type="button" class="back-btn" id="admin-panel-back"><span class="icon"><svg
-  class="lucide lucide-arrow-left"
-  xmlns="http://www.w3.org/2000/svg"
-  width="24"
-  height="24"
-  viewBox="0 0 24 24"
-  fill="none"
-  stroke="currentColor"
-  stroke-width="2"
-  stroke-linecap="round"
-  stroke-linejoin="round"
->
-  <path d="m12 19-7-7 7-7" />
-  <path d="M19 12H5" />
-</svg></span>Back</button>
-        <h1><span class="icon"><svg
+      <div class="dashboard-shell">
+        <aside class="dashboard-sidebar">
+          <h1 class="dashboard-sidebar-title"><span class="icon"><svg
   class="lucide lucide-wrench"
   xmlns="http://www.w3.org/2000/svg"
   width="24"
@@ -498,20 +601,44 @@
 >
   <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z" />
 </svg></span>Admin panel</h1>
-
-        <h2 class="panel-subhead">Shop-owner applications</h2>
-        <div id="admin-applications-list" class="list"></div>
-
-        <h2 class="panel-subhead">Shops pending review</h2>
-        <div id="admin-shops-list" class="list"></div>
-      </div>
-    </div>
-
-    <!-- My orders: every buy/sell thread the account is part of, as
-         either buyer or seller. -->
-    <div id="orders-panel" hidden>
-      <div class="lobby-card wide-card">
-        <button type="button" class="back-btn" id="orders-panel-back"><span class="icon"><svg
+          <nav class="dashboard-nav">
+            <button type="button" class="dashboard-nav-item active" data-dashboard-section="applications"><span class="icon"><svg
+  class="lucide lucide-clipboard-list"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <rect width="8" height="4" x="8" y="2" rx="1" ry="1" />
+  <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+  <path d="M12 11h4" />
+  <path d="M12 16h4" />
+  <path d="M8 11h.01" />
+  <path d="M8 16h.01" />
+</svg></span>Applications</button>
+            <button type="button" class="dashboard-nav-item" data-dashboard-section="shops"><span class="icon"><svg
+  class="lucide lucide-store"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M15 21v-5a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v5" />
+  <path d="M17.774 10.31a1.12 1.12 0 0 0-1.549 0 2.5 2.5 0 0 1-3.451 0 1.12 1.12 0 0 0-1.548 0 2.5 2.5 0 0 1-3.452 0 1.12 1.12 0 0 0-1.549 0 2.5 2.5 0 0 1-3.77-3.248l2.889-4.184A2 2 0 0 1 7 2h10a2 2 0 0 1 1.653.873l2.895 4.192a2.5 2.5 0 0 1-3.774 3.244" />
+  <path d="M4 10.95V19a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8.05" />
+</svg></span>Shops pending</button>
+          </nav>
+          <button type="button" class="back-btn" id="admin-panel-back"><span class="icon"><svg
   class="lucide lucide-arrow-left"
   xmlns="http://www.w3.org/2000/svg"
   width="24"
@@ -526,7 +653,27 @@
   <path d="m12 19-7-7 7-7" />
   <path d="M19 12H5" />
 </svg></span>Back</button>
-        <h1><span class="icon"><svg
+        </aside>
+        <div class="dashboard-content">
+        <div data-dashboard-panel="applications">
+        <h2 class="panel-subhead">Shop-owner applications</h2>
+        <div id="admin-applications-list" class="list"></div>
+        </div>
+
+        <div data-dashboard-panel="shops" hidden>
+        <h2 class="panel-subhead">Shops pending review</h2>
+        <div id="admin-shops-list" class="list"></div>
+        </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- My orders: every buy/sell thread the account is part of, as
+         either buyer or seller. -->
+    <div id="orders-panel" hidden>
+      <div class="dashboard-shell">
+        <aside class="dashboard-sidebar">
+          <h1 class="dashboard-sidebar-title"><span class="icon"><svg
   class="lucide lucide-package"
   xmlns="http://www.w3.org/2000/svg"
   width="24"
@@ -543,7 +690,83 @@
   <polyline points="3.29 7 12 12 20.71 7" />
   <path d="m7.5 4.27 9 5.15" />
 </svg></span>My orders</h1>
+          <nav class="dashboard-nav">
+            <button type="button" class="dashboard-nav-item active" data-dashboard-section="orders">All orders</button>
+          </nav>
+          <button type="button" class="back-btn" id="orders-panel-back"><span class="icon"><svg
+  class="lucide lucide-arrow-left"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="m12 19-7-7 7-7" />
+  <path d="M19 12H5" />
+</svg></span>Back</button>
+        </aside>
+        <div class="dashboard-content">
+        <div data-dashboard-panel="orders">
         <div id="orders-list" class="list"></div>
+        </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tournament/event management + registration for one shop - opened
+         either from the in-shop topbar menu (current shop) or from the
+         owner dashboard's Events section (any shop you own). List view
+         shows every event for that shop; clicking one opens detail view
+         (standings, pairings, reporting, organizer controls). See
+         ui/eventsPanel.js. -->
+    <div id="events-panel" hidden>
+      <div class="dashboard-shell">
+        <aside class="dashboard-sidebar">
+          <h1 class="dashboard-sidebar-title"><span class="icon"><svg
+  class="lucide lucide-trophy"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M10 14.66V17a1 1 0 0 1-1 1 2 2 0 0 0-2 2v2" />
+  <path d="M14 14.66V17a1 1 0 0 0 1 1 2 2 0 0 1 2 2v2" />
+  <path d="M17.916 10H19.5A2.5 2.5 0 0 0 22 7.5V5a1 1 0 0 0-1-1h-3" />
+  <path d="M4 22h16" />
+  <path d="M6 9a6 6 0 0 0 12 0V3a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1z" />
+  <path d="M6.084 10H4.5A2.5 2.5 0 0 1 2 7.5V5a1 1 0 0 1 1-1h3" />
+</svg></span><span id="events-panel-title">Events</span></h1>
+          <button type="button" class="back-btn" id="events-panel-back"><span class="icon"><svg
+  class="lucide lucide-arrow-left"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="m12 19-7-7 7-7" />
+  <path d="M19 12H5" />
+</svg></span>Back</button>
+        </aside>
+        <div class="dashboard-content">
+        <div data-dashboard-panel="events">
+        <p id="events-panel-error" class="error" hidden></p>
+        <div id="events-panel-body"></div>
+        </div>
+        </div>
       </div>
     </div>
 

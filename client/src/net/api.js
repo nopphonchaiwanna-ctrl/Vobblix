@@ -197,3 +197,53 @@ export function adminApproveShop(token, id) {
 export function adminRejectShop(token, id, reason) {
   return request(`/admin/shops/${id}/reject`, { method: "POST", token, body: JSON.stringify({ reason }) });
 }
+
+// ---------- Tournament/event system ----------
+
+export function createEvent(token, fields) {
+  return request("/events", { method: "POST", token, body: JSON.stringify(fields) });
+}
+
+export function listEventsByShop(token, shopId) {
+  return request(`/events/by-shop/${shopId}`, { token });
+}
+
+export function getEvent(token, eventId) {
+  return request(`/events/${eventId}`, { token });
+}
+
+export function registerForEvent(token, eventId) {
+  return request(`/events/${eventId}/register`, { method: "POST", token });
+}
+
+export function dropFromEvent(token, eventId, playerId) {
+  return request(`/events/${eventId}/drop`, {
+    method: "POST",
+    token,
+    body: JSON.stringify(playerId ? { playerId } : {}),
+  });
+}
+
+export function startEvent(token, eventId) {
+  return request(`/events/${eventId}/start`, { method: "POST", token });
+}
+
+export function reportMatchResult(token, eventId, matchId, claim) {
+  return request(`/events/${eventId}/matches/${matchId}/report`, {
+    method: "POST",
+    token,
+    body: JSON.stringify({ claim }),
+  });
+}
+
+export function overrideMatchResult(token, eventId, matchId, result) {
+  return request(`/events/${eventId}/matches/${matchId}/override`, {
+    method: "POST",
+    token,
+    body: JSON.stringify({ result }),
+  });
+}
+
+export function advanceEvent(token, eventId) {
+  return request(`/events/${eventId}/advance`, { method: "POST", token });
+}

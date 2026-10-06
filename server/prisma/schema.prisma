@@ -1,110 +1,95 @@
-// Hand-written to match server/migrations/001_init.sql + 002_shop_owner_marketplace.sql
-// exactly, since `prisma db pull` needs to download an engine binary from
-// binaries.prisma.sh and that host is blocked by network policy in this
-// session (both the cloud sandbox and this device's shell) - see the
-// chat for details. Re-run `npx prisma db pull` yourself later (from a
-// normal, unrestricted terminal) any time you want Prisma to verify this
-// file still matches the live database, or after a migration you write
-// by hand (server/migrations/*.sql is still the source of truth - see
-// README's migration workflow).
-
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  previewFeatures = ["partialIndexes"]
 }
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 model User {
-  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  email        String   @unique
-  passwordHash String   @map("password_hash")
-  displayName  String   @map("display_name")
-  avatarUrl    String?  @map("avatar_url") // plain image URL, same convention as Shop.logoUrl
-  role         String   @default("customer") // customer | shop_owner | admin
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
-
-  ownedShops          Shop[]                @relation("ShopOwner")
-  reviewedShops       Shop[]                @relation("ShopReviewer")
-  ownerApplications   ShopOwnerApplication[] @relation("Applicant")
-  reviewedApplications ShopOwnerApplication[] @relation("ApplicationReviewer")
-  chatMessages        ChatMessage[]
-  buyerOrders         ShopOrder[]           @relation("Buyer")
-  sellerOrders        ShopOrder[]           @relation("Seller")
-  orderMessages       ShopOrderMessage[]
-  deletionRequests    AccountDeletionRequest[]
+  id                                                 String                      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email                                              String                      @unique
+  passwordHash                                       String                      @map("password_hash")
+  displayName                                        String                      @map("display_name")
+  createdAt                                          DateTime                    @default(now()) @map("created_at") @db.Timestamptz(6)
+  role                                               String                      @default("customer")
+  avatarUrl                                          String?                     @map("avatar_url")
+  email_verified_at                                  DateTime?                   @db.Timestamptz(6)
+  deletionRequests                                   AccountDeletionRequest?
+  blocked_users_blocked_users_blocked_user_idTousers blocked_users[]             @relation("blocked_users_blocked_user_idTousers")
+  blocked_users_blocked_users_user_idTousers         blocked_users[]             @relation("blocked_users_user_idTousers")
+  chatMessages                                       ChatMessage[]
+  email_verification_tokens                          email_verification_tokens[]
+  password_reset_tokens                              password_reset_tokens[]
+  orderMessages                                      ShopOrderMessage[]
+  buyerOrders                                        ShopOrder[]                 @relation("Buyer")
+  sellerOrders                                       ShopOrder[]                 @relation("Seller")
+  reviewedApplications                               ShopOwnerApplication[]      @relation("ApplicationReviewer")
+  ownerApplications                                  ShopOwnerApplication?       @relation("Applicant")
+  ownedShops                                         Shop?                       @relation("ShopOwner")
+  reviewedShops                                      Shop[]                      @relation("ShopReviewer")
+  tournament_events                                  tournament_events[]
+  tournament_matches                                 tournament_matches[]
+  tournament_players                                 tournament_players[]
 
   @@map("users")
 }
 
-// Self-service "please delete my account" request - an admin processes
-// it by hand for now (no admin UI yet). See migration 003.
 model AccountDeletionRequest {
   id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId    String   @map("user_id") @db.Uuid
+  userId    String   @unique(map: "account_deletion_requests_one_pending_idx", where: raw("(status = 'pending'::text)")) @map("user_id") @db.Uuid
   reason    String?
-  status    String   @default("pending") // pending | completed | cancelled
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status    String   @default("pending")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@map("account_deletion_requests")
 }
 
-// A user applies once; an admin approves/rejects - kept as its own table
-// (not a status column on users) so history/rejection reasons survive a
-// re-application. See migrations/002 for the one-pending-per-user index.
 model ShopOwnerApplication {
-  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId           String    @map("user_id") @db.Uuid
-  message          String?
-  status           String    @default("pending") // pending | approved | rejected
-  reviewedBy       String?   @map("reviewed_by") @db.Uuid
-  reviewedAt       DateTime? @map("reviewed_at") @db.Timestamptz
-  rejectionReason  String?   @map("rejection_reason")
-  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId          String    @unique(map: "shop_owner_applications_one_pending_idx", where: raw("(status = 'pending'::text)")) @map("user_id") @db.Uuid
+  message         String?
+  status          String    @default("pending")
+  reviewedBy      String?   @map("reviewed_by") @db.Uuid
+  reviewedAt      DateTime? @map("reviewed_at") @db.Timestamptz(6)
+  rejectionReason String?   @map("rejection_reason")
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  reviewer        User?     @relation("ApplicationReviewer", fields: [reviewedBy], references: [id], onUpdate: NoAction)
+  applicant       User      @relation("Applicant", fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
-  applicant User  @relation("Applicant", fields: [userId], references: [id], onDelete: Cascade)
-  reviewer  User? @relation("ApplicationReviewer", fields: [reviewedBy], references: [id], onDelete: SetNull)
-
+  @@index([status, createdAt], map: "shop_owner_applications_status_idx")
   @@map("shop_owner_applications")
 }
 
-// scene_type: a static scenes/*.js id (ad-hoc "type any code" shops) or
-// the OWNED_SCENE_TYPE sentinel "owned" (deliberate owner-created shops -
-// see server/src/scenes/index.js's resolveScene()). owner_user_id is
-// NULL for every ad-hoc shop; only the owner-created path sets it.
 model Shop {
-  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  code              String    @unique
+  id                String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code              String              @unique
   name              String
-  sceneType         String    @default("default") @map("scene_type")
-  ownerUserId       String?   @map("owner_user_id") @db.Uuid
-  status            String    @default("published") // draft | pending_review | published | rejected | suspended
-  layoutTemplateId  String?   @map("layout_template_id")
-  theme             String    @default("default")
-  assets            Json      @default("{}")
-  logoUrl           String?   @map("logo_url")
+  sceneType         String              @default("default") @map("scene_type")
+  ownerUserId       String?             @unique(map: "shops_one_per_owner_idx", where: raw("(owner_user_id IS NOT NULL)")) @map("owner_user_id") @db.Uuid
+  createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  status            String              @default("published")
+  layoutTemplateId  String?             @map("layout_template_id")
+  theme             String              @default("default")
+  assets            Json                @default("{}")
+  logoUrl           String?             @map("logo_url")
   description       String?
-  reviewedBy        String?   @map("reviewed_by") @db.Uuid
-  reviewedAt        DateTime? @map("reviewed_at") @db.Timestamptz
-  rejectionReason   String?   @map("rejection_reason")
-  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  reviewedBy        String?             @map("reviewed_by") @db.Uuid
+  reviewedAt        DateTime?           @map("reviewed_at") @db.Timestamptz(6)
+  rejectionReason   String?             @map("rejection_reason")
+  chatMessages      ChatMessage[]
+  listings          ShopListing[]
+  orders            ShopOrder[]
+  owner             User?               @relation("ShopOwner", fields: [ownerUserId], references: [id], onUpdate: NoAction)
+  reviewer          User?               @relation("ShopReviewer", fields: [reviewedBy], references: [id], onUpdate: NoAction)
+  tournament_events tournament_events[]
 
-  owner        User?              @relation("ShopOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
-  reviewer     User?              @relation("ShopReviewer", fields: [reviewedBy], references: [id], onDelete: SetNull)
-  chatMessages ChatMessage[]
-  listings     ShopListing[]
-  orders       ShopOrder[]
-
+  @@index([status])
   @@map("shops")
 }
 
-// table_id NULL = shop-wide message; otherwise scoped to one table (e.g.
-// "table-1"). author_name is denormalized so history reads right even if
-// the account is later renamed/removed.
 model ChatMessage {
   id         BigInt   @id @default(autoincrement())
   shopId     String   @map("shop_id") @db.Uuid
@@ -112,70 +97,178 @@ model ChatMessage {
   userId     String?  @map("user_id") @db.Uuid
   authorName String   @map("author_name")
   text       String
-  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  shop       Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user       User?    @relation(fields: [userId], references: [id], onUpdate: NoAction)
 
-  shop Shop  @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
-
+  @@index([shopId, tableId, createdAt], map: "chat_messages_shop_table_created_idx")
   @@map("chat_messages")
 }
 
 model ShopListing {
-  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  shopId      String   @map("shop_id") @db.Uuid
+  id          String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  shopId      String      @map("shop_id") @db.Uuid
   title       String
   description String?
-  priceCents  Int      @map("price_cents")
-  currency    String   @default("THB")
-  photoUrl    String?  @map("photo_url")
-  stockQty    Int?     @map("stock_qty") // NULL = not tracked
-  status      String   @default("active") // active | sold_out | archived
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt   DateTime @default(now()) @map("updated_at") @db.Timestamptz
+  priceCents  Int         @map("price_cents")
+  currency    String      @default("THB")
+  photoUrl    String?     @map("photo_url")
+  stockQty    Int?        @map("stock_qty")
+  status      String      @default("active")
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime    @default(now()) @map("updated_at") @db.Timestamptz(6)
+  shop        Shop        @relation(fields: [shopId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  orders      ShopOrder[]
 
-  shop   Shop        @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  orders ShopOrder[]
-
+  @@index([shopId, status], map: "shop_listings_shop_status_idx")
   @@map("shop_listings")
 }
 
-// v1 has no real payment processing - a buyer opens an order (a
-// persisted chat thread) to arrange the sale by hand with the owner.
-// payment_provider/payment_reference are unused today but reserved for a
-// future payment-gateway integration (see README roadmap).
 model ShopOrder {
-  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  listingId           String   @map("listing_id") @db.Uuid
-  shopId              String   @map("shop_id") @db.Uuid
-  buyerId             String   @map("buyer_id") @db.Uuid
-  sellerId            String   @map("seller_id") @db.Uuid
-  quantity            Int      @default(1)
-  priceCentsSnapshot  Int      @map("price_cents_snapshot") // listing price at time of inquiry
-  status              String   @default("inquiry") // inquiry | confirmed | completed | cancelled
-  paymentProvider     String?  @map("payment_provider")
-  paymentReference    String?  @map("payment_reference")
-  createdAt           DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt           DateTime @default(now()) @map("updated_at") @db.Timestamptz
+  id                 String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  listingId          String             @map("listing_id") @db.Uuid
+  shopId             String             @map("shop_id") @db.Uuid
+  buyerId            String             @map("buyer_id") @db.Uuid
+  sellerId           String             @map("seller_id") @db.Uuid
+  quantity           Int                @default(1)
+  priceCentsSnapshot Int                @map("price_cents_snapshot")
+  status             String             @default("inquiry")
+  paymentProvider    String?            @map("payment_provider")
+  paymentReference   String?            @map("payment_reference")
+  createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime           @default(now()) @map("updated_at") @db.Timestamptz(6)
+  messages           ShopOrderMessage[]
+  buyer              User               @relation("Buyer", fields: [buyerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  listing            ShopListing        @relation(fields: [listingId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  seller             User               @relation("Seller", fields: [sellerId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  shop               Shop               @relation(fields: [shopId], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
-  listing  ShopListing        @relation(fields: [listingId], references: [id], onDelete: Cascade)
-  shop     Shop               @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  buyer    User               @relation("Buyer", fields: [buyerId], references: [id], onDelete: Cascade)
-  seller   User               @relation("Seller", fields: [sellerId], references: [id], onDelete: Cascade)
-  messages ShopOrderMessage[]
-
+  @@index([buyerId, createdAt], map: "shop_orders_buyer_idx")
+  @@index([sellerId, createdAt], map: "shop_orders_seller_idx")
   @@map("shop_orders")
 }
 
 model ShopOrderMessage {
-  id         BigInt   @id @default(autoincrement())
-  orderId    String   @map("order_id") @db.Uuid
-  senderId   String?  @map("sender_id") @db.Uuid
-  authorName String   @map("author_name")
+  id         BigInt    @id @default(autoincrement())
+  orderId    String    @map("order_id") @db.Uuid
+  senderId   String?   @map("sender_id") @db.Uuid
+  authorName String    @map("author_name")
   text       String
-  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  order      ShopOrder @relation(fields: [orderId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  sender     User?     @relation(fields: [senderId], references: [id], onUpdate: NoAction)
 
-  order  ShopOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  sender User?     @relation(fields: [senderId], references: [id], onDelete: SetNull)
-
+  @@index([orderId, createdAt], map: "shop_order_messages_order_idx")
   @@map("shop_order_messages")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model blocked_users {
+  id                                         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id                                    String   @db.Uuid
+  blocked_user_id                            String   @db.Uuid
+  created_at                                 DateTime @default(now()) @db.Timestamptz(6)
+  users_blocked_users_blocked_user_idTousers User     @relation("blocked_users_blocked_user_idTousers", fields: [blocked_user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users_blocked_users_user_idTousers         User     @relation("blocked_users_user_idTousers", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([user_id, blocked_user_id], map: "blocked_users_pair_idx")
+}
+
+model email_verification_tokens {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id    String    @db.Uuid
+  token_hash String    @unique
+  expires_at DateTime  @db.Timestamptz(6)
+  used_at    DateTime? @db.Timestamptz(6)
+  created_at DateTime  @default(now()) @db.Timestamptz(6)
+  users      User      @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([user_id], map: "email_verification_tokens_user_idx")
+}
+
+model password_reset_tokens {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id    String    @db.Uuid
+  token_hash String    @unique
+  expires_at DateTime  @db.Timestamptz(6)
+  used_at    DateTime? @db.Timestamptz(6)
+  created_at DateTime  @default(now()) @db.Timestamptz(6)
+  users      User      @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([user_id], map: "password_reset_tokens_user_idx")
+}
+
+model schema_migrations {
+  filename   String   @id
+  applied_at DateTime @default(now()) @db.Timestamptz(6)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model tournament_events {
+  id                  String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  shop_id             String               @db.Uuid
+  name                String
+  format              String               @default("swiss_only")
+  configured_cut_size Int?
+  effective_cut_size  Int?
+  cut_enabled         Boolean?
+  draw_rule           String               @default("double_loss")
+  status              String               @default("registration")
+  current_phase       String               @default("swiss")
+  round_count         Int?
+  current_round       Int                  @default(0)
+  created_by          String?              @db.Uuid
+  created_at          DateTime             @default(now()) @db.Timestamptz(6)
+  started_at          DateTime?            @db.Timestamptz(6)
+  completed_at        DateTime?            @db.Timestamptz(6)
+  max_players         Int?
+  users               User?                @relation(fields: [created_by], references: [id], onUpdate: NoAction)
+  shops               Shop                 @relation(fields: [shop_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  tournament_matches  tournament_matches[]
+  tournament_players  tournament_players[]
+
+  @@index([shop_id, created_at], map: "tournament_events_shop_idx")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model tournament_matches {
+  id                                                                   String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  event_id                                                             String              @db.Uuid
+  phase                                                                String
+  round_number                                                         Int
+  player1_id                                                           String              @db.Uuid
+  player2_id                                                           String?             @db.Uuid
+  player1_claim                                                        String?
+  player2_claim                                                        String?
+  result                                                               String?
+  confirmed_at                                                         DateTime?           @db.Timestamptz(6)
+  admin_override_by                                                    String?             @db.Uuid
+  created_at                                                           DateTime            @default(now()) @db.Timestamptz(6)
+  users                                                                User?               @relation(fields: [admin_override_by], references: [id], onUpdate: NoAction)
+  tournament_events                                                    tournament_events   @relation(fields: [event_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  tournament_players_tournament_matches_player1_idTotournament_players tournament_players  @relation("tournament_matches_player1_idTotournament_players", fields: [player1_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  tournament_players_tournament_matches_player2_idTotournament_players tournament_players? @relation("tournament_matches_player2_idTotournament_players", fields: [player2_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([player1_id], map: "tournament_matches_player1_idx")
+  @@index([player2_id], map: "tournament_matches_player2_idx")
+  @@index([event_id, phase, round_number], map: "tournament_matches_round_idx")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model tournament_players {
+  id                                                                   String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  event_id                                                             String               @db.Uuid
+  user_id                                                              String               @db.Uuid
+  dropped                                                              Boolean              @default(false)
+  had_bye                                                              Boolean              @default(false)
+  match_points                                                         Int                  @default(0)
+  final_rank                                                           Int?
+  final_label                                                          String?
+  registered_at                                                        DateTime             @default(now()) @db.Timestamptz(6)
+  tournament_matches_tournament_matches_player1_idTotournament_players tournament_matches[] @relation("tournament_matches_player1_idTotournament_players")
+  tournament_matches_tournament_matches_player2_idTotournament_players tournament_matches[] @relation("tournament_matches_player2_idTotournament_players")
+  tournament_events                                                    tournament_events    @relation(fields: [event_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users                                                                User                 @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([event_id, user_id], map: "tournament_players_event_user_idx")
 }

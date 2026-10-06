@@ -82,7 +82,10 @@ shopsRouter.post("/", requireRole("shop_owner", "admin"), async (req, res, next)
     const description = (req.body?.description || "").trim().slice(0, 500);
     const layoutTemplateId = req.body?.layoutTemplateId || DEFAULT_LAYOUT_TEMPLATE_ID;
     const theme = req.body?.theme || DEFAULT_THEME_ID;
-    const logoUrl = (req.body?.logoUrl || "").trim().slice(0, 500);
+    // Up to 500KB, not 500 chars - the logo is now a data: URL (picked
+    // from disk and resized/re-encoded client-side, same as a profile
+    // avatar - see client/src/ui/ownerDashboard.js), not a plain link.
+    const logoUrl = (req.body?.logoUrl || "").trim().slice(0, 500_000);
 
     if (!isValidShopCode(code)) {
       return res.status(400).json({ error: "Shop code must be 3-24 characters: lowercase letters, numbers, dashes." });
@@ -115,7 +118,7 @@ shopsRouter.patch("/:id", async (req, res, next) => {
       description: trimmedOr(req.body?.description, 500),
       layoutTemplateId: req.body?.layoutTemplateId,
       theme: req.body?.theme,
-      logoUrl: trimmedOr(req.body?.logoUrl, 500),
+      logoUrl: trimmedOr(req.body?.logoUrl, 500_000),
     });
     if (!shop) return res.status(404).json({ error: "You don't own a shop with that id." });
     res.json({ shop });

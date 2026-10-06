@@ -4,6 +4,7 @@
 
 import { myOrders } from "../net/api.js";
 import { formatTHB, escapeHtml, statusLabel } from "./format.js";
+import { initDashboardNav } from "./dashboardNav.js";
 
 function el(id) {
   return document.getElementById(id);
@@ -13,6 +14,10 @@ export function initOrdersPanel({ getToken, getUserId, orderThread, onBack }) {
   const screen = el("orders-panel");
   const backBtn = el("orders-panel-back");
   const listEl = el("orders-list");
+  // Only one section today ("All orders"), but shares the same
+  // dashboard-shell chrome as owner-dashboard/admin-panel for visual
+  // consistency rather than keeping the old floating-card look.
+  initDashboardNav(screen.querySelector(".dashboard-shell"), { defaultSection: "orders" });
 
   async function render() {
     const { orders } = await myOrders(getToken());
@@ -48,7 +53,7 @@ export function initOrdersPanel({ getToken, getUserId, orderThread, onBack }) {
 
   return {
     async open() {
-      document.querySelectorAll("#auth, #lobby, #game-screen, #owner-dashboard, #admin-panel, #order-thread, #settings-panel").forEach((s) => (s.hidden = true));
+      document.querySelectorAll("#auth, #lobby, #game-screen, #owner-dashboard, #admin-panel, #order-thread, #settings-panel, #events-panel").forEach((s) => (s.hidden = true));
       screen.hidden = false;
       await render();
     },

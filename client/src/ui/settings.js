@@ -6,11 +6,13 @@
 // self-service "delete immediately" button.
 //
 // The avatar photo is picked from disk, resized/re-encoded entirely in
-// the browser (fileToAvatarDataUrl() below), and sent up as a small
+// the browser (fileToResizedDataUrl() from imageUpload.js, shared with
+// ownerDashboard.js's shop-logo upload), and sent up as a small
 // data: URL - it's saved in the exact same avatar_url column a plain
 // image URL used to go in, so no upload endpoint/file storage exists
 // or is needed (see server/src/routes/auth.js's PATCH /me).
 
+import { fileToResizedDataUrl } from "./imageUpload.js";
 import {
   updateProfile,
   changePassword,
@@ -92,8 +94,9 @@ export function initSettingsPanel({ getToken, getSession, onBack, onProfileChang
     avatarRemoveBtn.hidden = !url;
   }
 
-  // Resizes/re-encodes entirely client-side via a <canvas> - caps the
-  // longest side at 256px and re-saves as JPEG, so a multi-megabyte
+  // Resizing/re-encoding itself (caps the longest side at 256px, JPEG
+  // quality 0.85) lives in imageUpload.js's fileToResizedDataUrl() -
+  // shared with ownerDashboard.js's shop-logo upload. A multi-megabyte
   // phone photo turns into a data: URL of a few tens of KB (small
   // enough for the DB column, the PATCH /me request body, and getting
   // broadcast to other players in a shop as a character texture - see
@@ -101,36 +104,6 @@ export function initSettingsPanel({ getToken, getSession, onBack, onProfileChang
   // login JWT like displayName is (see server/src/auth.js) - that would
   // blow well past the ~16KB HTTP header limit the moment anyone
   // uploaded a real photo and break every authenticated request.
-  function fileToAvatarDataUrl(file) {
-    return new Promise((resolve, reject) => {
-      if (!file.type.startsWith("image/")) {
-        reject(new Error("Please choose an image file."));
-        return;
-      }
-      if (file.size > MAX_AVATAR_SOURCE_BYTES) {
-        reject(new Error("That image is too large (max 12MB)."));
-        return;
-      }
-      const reader = new FileReader();
-      reader.onerror = () => reject(new Error("Couldn't read that file."));
-      reader.onload = () => {
-        const img = new Image();
-        img.onerror = () => reject(new Error("That doesn't look like a valid image."));
-        img.onload = () => {
-          const scale = Math.min(1, MAX_AVATAR_DIMENSION / Math.max(img.width, img.height));
-          const width = Math.max(1, Math.round(img.width * scale));
-          const height = Math.max(1, Math.round(img.height * scale));
-          const canvas = document.createElement("canvas");
-          canvas.width = width;
-          canvas.height = height;
-          canvas.getContext("2d").drawImage(img, 0, 0, width, height);
-          resolve(canvas.toDataURL("image/jpeg", 0.85));
-        };
-        img.src = reader.result;
-      };
-      reader.readAsDataURL(file);
-    });
-  }
 
   avatarChooseBtn.addEventListener("click", () => avatarFileInput.click());
 
@@ -140,7 +113,10 @@ export function initSettingsPanel({ getToken, getSession, onBack, onProfileChang
     if (!file) return;
     avatarError.hidden = true;
     try {
-      avatarValue = await fileToAvatarDataUrl(file);
+      avatarValue = await fileToResizedDataUrl(file, {
+        maxDimension: MAX_AVATAR_DIMENSION,
+        maxSourceBytes: MAX_AVATAR_SOURCE_BYTES,
+      });
       setAvatarPreview(avatarValue);
     } catch (err) {
       avatarError.textContent = err.message;
@@ -283,7 +259,7 @@ export function initSettingsPanel({ getToken, getSession, onBack, onProfileChang
   return {
     async open() {
       document
-        .querySelectorAll("#auth, #lobby, #game-screen, #owner-dashboard, #admin-panel, #orders-panel, #order-thread")
+        .querySelectorAll("#auth, #lobby, #game-screen, #owner-dashboard, #admin-panel, #orders-panel, #order-thread, #events-panel")
         .forEach((s) => (s.hidden = true));
       screen.hidden = false;
 
