@@ -87,10 +87,40 @@ export async function completeEvent(eventId) {
   return rows[0] || null;
 }
 
+/** Only an event that hasn't finished can be cancelled; null otherwise. */
 export async function cancelEvent(eventId) {
   const { rows } = await pool.query(
-    `UPDATE tournament_events SET status = 'cancelled' WHERE id = $1 RETURNING *`,
+    `UPDATE tournament_events SET status = 'cancelled'
+     WHERE id = $1 AND status IN ('registration', 'swiss', 'bracket')
+     RETURNING *`,
     [eventId]
+  );
+  return rows[0] || null;
+}
+
+/**
+ * Edits every setting - only while registration is open (the WHERE
+ * makes a start that lands first win; null comes back then).
+ */
+export async function updateEventSettings(eventId, { name, game, format, configuredCutSize, drawRule, maxPlayers, roundTimeLimitMinutes }) {
+  const { rows } = await pool.query(
+    `UPDATE tournament_events
+     SET name = $2, game = $3, format = $4, configured_cut_size = $5, draw_rule = $6,
+         max_players = $7, round_time_limit_minutes = $8
+     WHERE id = $1 AND status = 'registration'
+     RETURNING *`,
+    [eventId, name, game, format, configuredCutSize ?? null, drawRule, maxPlayers, roundTimeLimitMinutes ?? null]
+  );
+  return rows[0] || null;
+}
+
+/** Once rounds are running, only the name and round time limit change. */
+export async function updateEventBasics(eventId, { name, roundTimeLimitMinutes }) {
+  const { rows } = await pool.query(
+    `UPDATE tournament_events SET name = $2, round_time_limit_minutes = $3
+     WHERE id = $1 AND status IN ('swiss', 'bracket')
+     RETURNING *`,
+    [eventId, name, roundTimeLimitMinutes ?? null]
   );
   return rows[0] || null;
 }

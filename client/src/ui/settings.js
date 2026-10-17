@@ -180,7 +180,13 @@ export function initSettingsPanel({ getToken, getSession, onBack, onProfileChang
     try {
       const { request } = await myDeletionRequest(getToken());
       const pending = request?.status === "pending";
-      deletionStatusEl.hidden = !pending;
+      // A declined request (migration 017's decline_reason) stays visible
+      // until the user files a new one, so they know why.
+      const declined = request?.status === "cancelled" && request.decline_reason;
+      deletionStatusEl.hidden = !pending && !declined;
+      if (declined) {
+        deletionStatusEl.textContent = `Your last deletion request was declined: ${request.decline_reason}`;
+      }
       if (pending) {
         deletionStatusEl.textContent = "Account deletion requested - an admin will process it soon.";
       }

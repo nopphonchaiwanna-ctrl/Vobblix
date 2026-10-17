@@ -29,14 +29,15 @@ export function withClickOutsideFallback(dialog) {
  * Replaces `window.confirm(message)`.
  *
  * @param {string} message
- * @param {{ title?: string, confirmLabel?: string, danger?: boolean }} [options]
+ * @param {{ title?: string, confirmLabel?: string, cancelLabel?: string, danger?: boolean }} [options]
  * @returns {Promise<boolean>} resolves true only if "Confirm" was clicked/submitted
  */
-export function confirmDialog(message, { title = "Are you sure?", confirmLabel = "Confirm", danger = false } = {}) {
+export function confirmDialog(message, { title = "Are you sure?", confirmLabel = "Confirm", cancelLabel = "Cancel", danger = false } = {}) {
   const dialog = document.getElementById("confirm-dialog");
   const titleEl = document.getElementById("confirm-dialog-title");
   const messageEl = document.getElementById("confirm-dialog-message");
   const confirmBtn = document.getElementById("confirm-dialog-confirm-btn");
+  const cancelBtn = dialog?.querySelector(".dialog-cancel");
   if (!dialog || !titleEl || !messageEl || !confirmBtn) {
     // Markup missing for some reason - fall back rather than throwing.
     return Promise.resolve(window.confirm(message));
@@ -45,6 +46,8 @@ export function confirmDialog(message, { title = "Are you sure?", confirmLabel =
   titleEl.textContent = title;
   messageEl.textContent = message;
   confirmBtn.textContent = confirmLabel;
+  // Reset every time - the dialog element is shared by every caller.
+  if (cancelBtn) cancelBtn.textContent = cancelLabel;
   confirmBtn.classList.toggle("danger", danger);
   withClickOutsideFallback(dialog);
 

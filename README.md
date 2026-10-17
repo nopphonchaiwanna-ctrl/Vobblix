@@ -19,8 +19,9 @@ whoever's at that table.
 - **Table-scoped voice/video calls** (WebRTC mesh, no media server) — up
   to 10 people can talk at once per table, up to 4 of them with camera
   on; joining is an explicit button press, never automatic
-- Multiple independent "shops" via a shop code entered in the lobby —
-  share a code with friends to land in the same room
+- Multiple independent shops, entered by their shop code in the lobby
+  (published owner shops, admin "central" shops, and the `default`
+  room) - share a code with friends to land in the same room
 - **Shops and chat history persist in Postgres** — a shop's code/layout
   and its chat log survive a server restart; live presence (who's
   online right now, positions) does not, and doesn't need to
@@ -80,10 +81,12 @@ plus one import + one entry in the `SCENES` map in
 else in the server, and nothing in the client, needs to change just to
 add another shop or a special/limited-time event floor.
 
-A shop picks its scene the first time anyone joins that shop code (via a
-`sceneType` sent with `join-shop`, defaulting to `"default"`) and the
-choice is written to Postgres, so it stays fixed for that shop's
-lifetime — see `findOrCreateShop()` in `server/src/db/shops.js`.
+A shop's scene is its `shops.scene_type` row value. `join-shop` only
+enters shops that already exist (`getShopByCode()` in
+`server/src/db/shops.js`) - typing an unknown code in the lobby gets "No
+shop with that code" rather than creating a room. A new plain room is
+therefore a row inserted by a migration (as 017 does for `default`),
+and owner shops come from the shop-owner flow.
 
 If a future event needs more than a different floor — a countdown
 timer, special walk-in rules, decorations with their own logic — see

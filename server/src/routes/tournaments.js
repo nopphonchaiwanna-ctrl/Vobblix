@@ -9,6 +9,7 @@ import { Router } from "express";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { getShopById } from "../db/shops.js";
 import * as db from "../db/tournaments.js";
+import { createNotification, publicNotification } from "../db/notifications.js";
 import {
   computeRoundCount,
   pairRound,
@@ -26,7 +27,6 @@ import {
   placementLabel,
 } from "../tournament/bracket.js";
 
-export const tournamentsRouter = Router();
 
 const VALID_MAX_PLAYERS = [4, 8, 16, 32, 64];
 const MAX_ROUND_TIME_LIMIT_MINUTES = 2880; // 2 days
@@ -37,6 +37,45 @@ const MAX_ROUND_TIME_LIMIT_MINUTES = 2880; // 2 days
 const VALID_GAMES = ["vanguard"];
 
 // ---------- Shared helpers ----------
+
+// Statuses where rounds are being played - results can be reported,
+// overridden and advanced only then.
+const RUNNING_STATUSES = ["swiss", "bracket"];
+
+/**
+ * Validates an event's settings from a request body - shared by create
+ * and edit so the two can't drift apart. Returns { error } or { fields }.
+ */
+function parseEventSettings(body) {
+  const name = (body?.name || "").trim().slice(0, 80);
+  const game = body?.game;
+  const format = body?.format === "swiss_cut" ? "swiss_cut" : "swiss_only";
+  const drawRule = body?.drawRule === "draw" ? "draw" : "double_loss";
+  const configuredCutSize = format === "swiss_cut" ? Number(body?.configuredCutSize) : null;
+  const maxPlayers = Number(body?.maxPlayers);
+  const roundTimeLimitMinutes = parseRoundTimeLimit(body?.roundTimeLimitMinutes);
+
+  if (!name) return { error: "Enter an event name." };
+  if (!VALID_GAMES.includes(game)) return { error: "Choose a supported game." };
+  if (format === "swiss_cut" && !isValidCutSize(configuredCutSize)) {
+    return { error: "Cut size must be one of 4, 8, 16, 32, 64." };
+  }
+  if (!VALID_MAX_PLAYERS.includes(maxPlayers)) {
+    return { error: "Player limit must be one of 4, 8, 16, 32, 64." };
+  }
+  if (roundTimeLimitMinutes === undefined) return { error: ROUND_TIME_LIMIT_ERROR };
+  return { fields: { name, game, format, configuredCutSize, drawRule, maxPlayers, roundTimeLimitMinutes } };
+}
+
+const ROUND_TIME_LIMIT_ERROR = "Round time limit must be between 1 minute and 2 days (2880 minutes).";
+
+/** null = no limit, undefined = invalid, otherwise whole minutes. */
+function parseRoundTimeLimit(raw) {
+  if (raw === null || raw === undefined || raw === "") return null;
+  const minutes = Number(raw);
+  if (!Number.isInteger(minutes) || minutes < 1 || minutes > MAX_ROUND_TIME_LIMIT_MINUTES) return undefined;
+  return minutes;
+}
 
 async function requireShopOwnerOrAdmin(req, res, shopId) {
   const shop = await getShopById(shopId);
@@ -168,287 +207,346 @@ function publicMatch(row) {
   };
 }
 
-// ---------- Create / list (owner, admin) ----------
+// Takes `io` (same reason as routes/orders.js's createOrdersRouter) so
+// cancelling an event can push a notification to every registered
+// player, not just persist it.
+export function createTournamentsRouter(io) {
+  const tournamentsRouter = Router();
 
-tournamentsRouter.use(requireAuth);
+  // ---------- Create / list (owner, admin) ----------
 
-tournamentsRouter.post("/", requireRole("shop_owner", "admin"), async (req, res, next) => {
-  try {
-    const shopId = req.body?.shopId;
-    const shop = await requireShopOwnerOrAdmin(req, res, shopId);
-    if (!shop) return;
+  tournamentsRouter.use(requireAuth);
 
-    const name = (req.body?.name || "").trim().slice(0, 80);
-    const game = req.body?.game;
-    const format = req.body?.format === "swiss_cut" ? "swiss_cut" : "swiss_only";
-    const drawRule = req.body?.drawRule === "draw" ? "draw" : "double_loss";
-    const configuredCutSize = format === "swiss_cut" ? Number(req.body?.configuredCutSize) : null;
-    const maxPlayers = Number(req.body?.maxPlayers);
-    const roundTimeLimitRaw = req.body?.roundTimeLimitMinutes;
-    const roundTimeLimitMinutes =
-      roundTimeLimitRaw === null || roundTimeLimitRaw === undefined || roundTimeLimitRaw === ""
-        ? null
-        : Number(roundTimeLimitRaw);
+  tournamentsRouter.post("/", requireRole("shop_owner", "admin"), async (req, res, next) => {
+    try {
+      const shopId = req.body?.shopId;
+      const shop = await requireShopOwnerOrAdmin(req, res, shopId);
+      if (!shop) return;
 
-    if (!name) return res.status(400).json({ error: "Enter an event name." });
-    if (!VALID_GAMES.includes(game)) {
-      return res.status(400).json({ error: "Choose a supported game." });
+      const parsed = parseEventSettings(req.body);
+      if (parsed.error) return res.status(400).json({ error: parsed.error });
+
+      const event = await db.createEvent({ shopId, ...parsed.fields, createdBy: req.auth.userId });
+      res.status(201).json({ event: publicEvent(event) });
+    } catch (err) {
+      next(err);
     }
-    if (format === "swiss_cut" && !isValidCutSize(configuredCutSize)) {
-      return res.status(400).json({ error: "Cut size must be one of 4, 8, 16, 32, 64." });
+  });
+
+  tournamentsRouter.get("/by-shop/:shopId", async (req, res, next) => {
+    try {
+      const events = await db.listEventsForShop(req.params.shopId);
+      res.json({ events: events.map(publicEvent) });
+    } catch (err) {
+      next(err);
     }
-    if (!VALID_MAX_PLAYERS.includes(maxPlayers)) {
-      return res.status(400).json({ error: "Player limit must be one of 4, 8, 16, 32, 64." });
+  });
+
+  // ---------- Event detail ----------
+
+  tournamentsRouter.get("/:id", async (req, res, next) => {
+    try {
+      const event = await db.getEventById(req.params.id);
+      if (!event) return res.status(404).json({ error: "Event not found." });
+
+      const players = await db.getPlayersForEvent(event.id);
+      const activePlayers = players.filter((p) => !p.dropped);
+      const swissMatches = await db.getAllMatchesForEvent(event.id, "swiss");
+      const { standings } = computeSwissStandings(activePlayers, swissMatches, event.draw_rule);
+      const sorted = sortStandings(standings);
+
+      const currentRoundMatches = await db.getMatchesForRound(event.id, event.current_phase, event.current_round || 1);
+      // Every match in a round is inserted in the same insertRoundMatches()
+      // call, so the earliest created_at among them is effectively "when
+      // this round started" - no separate column needed. Purely for the
+      // client's optional countdown display (round_time_limit_minutes);
+      // nothing here auto-resolves a match when time's up.
+      const currentRoundStartedAt = currentRoundMatches.reduce(
+        (earliest, m) => (!earliest || m.created_at < earliest ? m.created_at : earliest),
+        null
+      );
+
+      res.json({
+        event: publicEvent(event),
+        players: players.map((p) => ({
+          id: p.id,
+          userId: p.user_id,
+          displayName: p.display_name,
+          dropped: p.dropped,
+          finalRank: p.final_rank,
+          finalLabel: p.final_label,
+        })),
+        standings: sorted,
+        currentRoundMatches: currentRoundMatches.map(publicMatch),
+        currentRoundStartedAt,
+      });
+    } catch (err) {
+      next(err);
     }
-    if (
-      roundTimeLimitMinutes !== null &&
-      (!Number.isInteger(roundTimeLimitMinutes) || roundTimeLimitMinutes < 1 || roundTimeLimitMinutes > MAX_ROUND_TIME_LIMIT_MINUTES)
-    ) {
-      return res.status(400).json({ error: "Round time limit must be between 1 minute and 2 days (2880 minutes)." });
-    }
+  });
 
-    const event = await db.createEvent({
-      shopId,
-      name,
-      game,
-      format,
-      configuredCutSize,
-      drawRule,
-      maxPlayers,
-      roundTimeLimitMinutes,
-      createdBy: req.auth.userId,
-    });
-    res.status(201).json({ event: publicEvent(event) });
-  } catch (err) {
-    next(err);
-  }
-});
+  // ---------- Edit / cancel (owner, admin) ----------
 
-tournamentsRouter.get("/by-shop/:shopId", async (req, res, next) => {
-  try {
-    const events = await db.listEventsForShop(req.params.shopId);
-    res.json({ events: events.map(publicEvent) });
-  } catch (err) {
-    next(err);
-  }
-});
+  // While registration is open every setting can change (the player limit
+  // can't drop below who's already in). Once rounds are running only the
+  // name and round time limit can - format, cut and draw rule already
+  // shaped the pairings and standings.
+  tournamentsRouter.patch("/:id", async (req, res, next) => {
+    try {
+      const event = await requireEventOwnerOrAdmin(req, res, req.params.id);
+      if (!event) return;
 
-// ---------- Event detail ----------
-
-tournamentsRouter.get("/:id", async (req, res, next) => {
-  try {
-    const event = await db.getEventById(req.params.id);
-    if (!event) return res.status(404).json({ error: "Event not found." });
-
-    const players = await db.getPlayersForEvent(event.id);
-    const activePlayers = players.filter((p) => !p.dropped);
-    const swissMatches = await db.getAllMatchesForEvent(event.id, "swiss");
-    const { standings } = computeSwissStandings(activePlayers, swissMatches, event.draw_rule);
-    const sorted = sortStandings(standings);
-
-    const currentRoundMatches = await db.getMatchesForRound(event.id, event.current_phase, event.current_round || 1);
-    // Every match in a round is inserted in the same insertRoundMatches()
-    // call, so the earliest created_at among them is effectively "when
-    // this round started" - no separate column needed. Purely for the
-    // client's optional countdown display (round_time_limit_minutes);
-    // nothing here auto-resolves a match when time's up.
-    const currentRoundStartedAt = currentRoundMatches.reduce(
-      (earliest, m) => (!earliest || m.created_at < earliest ? m.created_at : earliest),
-      null
-    );
-
-    res.json({
-      event: publicEvent(event),
-      players: players.map((p) => ({
-        id: p.id,
-        userId: p.user_id,
-        displayName: p.display_name,
-        dropped: p.dropped,
-        finalRank: p.final_rank,
-        finalLabel: p.final_label,
-      })),
-      standings: sorted,
-      currentRoundMatches: currentRoundMatches.map(publicMatch),
-      currentRoundStartedAt,
-    });
-  } catch (err) {
-    next(err);
-  }
-});
-
-// ---------- Registration ----------
-
-tournamentsRouter.post("/:id/register", async (req, res, next) => {
-  try {
-    const event = await db.getEventById(req.params.id);
-    if (!event) return res.status(404).json({ error: "Event not found." });
-    if (event.status !== "registration") {
-      return res.status(409).json({ error: "Registration is closed for this event." });
-    }
-    if (event.max_players) {
-      const activeCount = await db.countActivePlayers(event.id);
-      const alreadyIn = await db.getPlayerByEventAndUser(event.id, req.auth.userId);
-      // A previously-dropped player re-registering takes a new active
-      // slot, so they're still subject to the cap; someone already
-      // active isn't - they'll just hit ALREADY_REGISTERED below.
-      if (activeCount >= event.max_players && !(alreadyIn && !alreadyIn.dropped)) {
-        return res.status(409).json({ error: "This event is full." });
+      if (event.status === "registration") {
+        const parsed = parseEventSettings(req.body);
+        if (parsed.error) return res.status(400).json({ error: parsed.error });
+        const activeCount = await db.countActivePlayers(event.id);
+        if (parsed.fields.maxPlayers < activeCount) {
+          return res.status(409).json({ error: `${activeCount} players are already registered - the limit can't go below that.` });
+        }
+        const updated = await db.updateEventSettings(event.id, parsed.fields);
+        if (!updated) return res.status(409).json({ error: "This event has just started - reload and try again." });
+        return res.json({ event: publicEvent(updated) });
       }
+
+      if (RUNNING_STATUSES.includes(event.status)) {
+        const name = (req.body?.name || "").trim().slice(0, 80);
+        const roundTimeLimitMinutes = parseRoundTimeLimit(req.body?.roundTimeLimitMinutes);
+        if (!name) return res.status(400).json({ error: "Enter an event name." });
+        if (roundTimeLimitMinutes === undefined) return res.status(400).json({ error: ROUND_TIME_LIMIT_ERROR });
+        const updated = await db.updateEventBasics(event.id, { name, roundTimeLimitMinutes });
+        if (!updated) return res.status(409).json({ error: "This event has just finished - reload and try again." });
+        return res.json({ event: publicEvent(updated) });
+      }
+
+      res.status(409).json({ error: "A finished or cancelled event can't be edited." });
+    } catch (err) {
+      next(err);
     }
-    const player = await db.registerPlayer(event.id, req.auth.userId);
-    res.status(201).json({ player });
-  } catch (err) {
-    if (err.code === "ALREADY_REGISTERED" || err.code === "23505") {
-      return res.status(409).json({ error: "You're already registered for this event." });
+  });
+
+  tournamentsRouter.post("/:id/cancel", async (req, res, next) => {
+    try {
+      const event = await requireEventOwnerOrAdmin(req, res, req.params.id);
+      if (!event) return;
+      const cancelled = await db.cancelEvent(event.id);
+      if (!cancelled) return res.status(409).json({ error: "This event has already finished or been cancelled." });
+
+      // Tell every active player (except whoever cancelled it). Persisted
+      // first so an offline player sees it in their bell next login; the
+      // cancel itself already succeeded, so a failure here is only logged.
+      const players = await db.getPlayersForEvent(event.id);
+      const recipients = players.filter((p) => !p.dropped && p.user_id !== req.auth.userId);
+      await Promise.all(
+        recipients.map(async (p) => {
+          try {
+            const n = await createNotification({
+              userId: p.user_id,
+              kind: "event_cancelled",
+              message: `"${event.name}" was cancelled by the organizer.`,
+              target: `/events/${event.id}`,
+            });
+            io.to(`user:${p.user_id}`).emit("notification:new", publicNotification(n));
+          } catch (err) {
+            console.error("[events] failed to notify player of cancellation", err);
+          }
+        })
+      );
+
+      res.json({ event: publicEvent(cancelled), notified: recipients.length });
+    } catch (err) {
+      next(err);
     }
-    next(err);
-  }
-});
+  });
 
-tournamentsRouter.post("/:id/drop", async (req, res, next) => {
-  try {
-    const event = await db.getEventById(req.params.id);
-    if (!event) return res.status(404).json({ error: "Event not found." });
+  // ---------- Registration ----------
 
-    let player;
-    if (req.body?.playerId) {
-      // Dropping someone else requires owning the shop (or admin).
-      if (!(await requireEventOwnerOrAdmin(req, res, event.id))) return;
-      player = await db.getPlayerById(req.body.playerId);
-    } else {
-      player = await db.getPlayerByEventAndUser(event.id, req.auth.userId);
+  tournamentsRouter.post("/:id/register", async (req, res, next) => {
+    try {
+      const event = await db.getEventById(req.params.id);
+      if (!event) return res.status(404).json({ error: "Event not found." });
+      if (event.status !== "registration") {
+        return res.status(409).json({ error: "Registration is closed for this event." });
+      }
+      if (event.max_players) {
+        const activeCount = await db.countActivePlayers(event.id);
+        const alreadyIn = await db.getPlayerByEventAndUser(event.id, req.auth.userId);
+        // A previously-dropped player re-registering takes a new active
+        // slot, so they're still subject to the cap; someone already
+        // active isn't - they'll just hit ALREADY_REGISTERED below.
+        if (activeCount >= event.max_players && !(alreadyIn && !alreadyIn.dropped)) {
+          return res.status(409).json({ error: "This event is full." });
+        }
+      }
+      const player = await db.registerPlayer(event.id, req.auth.userId);
+      res.status(201).json({ player });
+    } catch (err) {
+      if (err.code === "ALREADY_REGISTERED" || err.code === "23505") {
+        return res.status(409).json({ error: "You're already registered for this event." });
+      }
+      next(err);
     }
-    if (!player || player.event_id !== event.id) {
-      return res.status(404).json({ error: "Player not found in this event." });
+  });
+
+  tournamentsRouter.post("/:id/drop", async (req, res, next) => {
+    try {
+      const event = await db.getEventById(req.params.id);
+      if (!event) return res.status(404).json({ error: "Event not found." });
+      if (event.status === "completed" || event.status === "cancelled") {
+        return res.status(409).json({ error: "This event is over." });
+      }
+
+      let player;
+      if (req.body?.playerId) {
+        // Dropping someone else requires owning the shop (or admin).
+        if (!(await requireEventOwnerOrAdmin(req, res, event.id))) return;
+        player = await db.getPlayerById(req.body.playerId);
+      } else {
+        player = await db.getPlayerByEventAndUser(event.id, req.auth.userId);
+      }
+      if (!player || player.event_id !== event.id) {
+        return res.status(404).json({ error: "Player not found in this event." });
+      }
+      const dropped = await db.dropPlayer(player.id);
+      res.json({ player: dropped });
+    } catch (err) {
+      next(err);
     }
-    const dropped = await db.dropPlayer(player.id);
-    res.json({ player: dropped });
-  } catch (err) {
-    next(err);
-  }
-});
+  });
 
-// ---------- Start (closes registration, generates round 1) ----------
+  // ---------- Start (closes registration, generates round 1) ----------
 
-tournamentsRouter.post("/:id/start", async (req, res, next) => {
-  try {
-    const event = await requireEventOwnerOrAdmin(req, res, req.params.id);
-    if (!event) return;
-    if (event.status !== "registration") {
-      return res.status(409).json({ error: "This event has already been started." });
+  tournamentsRouter.post("/:id/start", async (req, res, next) => {
+    try {
+      const event = await requireEventOwnerOrAdmin(req, res, req.params.id);
+      if (!event) return;
+      if (event.status !== "registration") {
+        return res.status(409).json({ error: "This event has already been started." });
+      }
+
+      const players = (await db.getPlayersForEvent(event.id)).filter((p) => !p.dropped);
+      if (players.length < 2) {
+        return res.status(400).json({ error: "Need at least 2 registered players to start." });
+      }
+
+      const roundCount = computeRoundCount(players.length);
+      const eligibility = resolveCutEligibility(event.format, players.length, event.configured_cut_size);
+
+      const updatedEvent = await db.startEvent(event.id, {
+        roundCount,
+        cutEnabled: eligibility.cutEnabled,
+      });
+
+      const pairingInput = players.map((p) => ({
+        id: p.id,
+        points: 0,
+        opponentIds: [],
+        hadBye: p.had_bye,
+        dropped: false,
+      }));
+      const { pairings, byePlayerId } = pairRound(pairingInput);
+      await db.insertRoundMatches(event.id, "swiss", 1, pairings);
+      if (byePlayerId) await db.markPlayersHadBye([byePlayerId]);
+
+      res.json({
+        event: publicEvent(updatedEvent),
+        round1Pairings: pairings,
+        cutFallbackMessage: eligibility.reason,
+      });
+    } catch (err) {
+      next(err);
     }
+  });
 
-    const players = (await db.getPlayersForEvent(event.id)).filter((p) => !p.dropped);
-    if (players.length < 2) {
-      return res.status(400).json({ error: "Need at least 2 registered players to start." });
+  // ---------- Reporting results ----------
+
+  tournamentsRouter.post("/:id/matches/:matchId/report", async (req, res, next) => {
+    try {
+      const match = await db.getMatchById(req.params.matchId);
+      if (!match || match.event_id !== req.params.id) {
+        return res.status(404).json({ error: "Match not found." });
+      }
+      if (match.result) {
+        return res.status(409).json({ error: "This match's result is already final." });
+      }
+      const event = await db.getEventById(match.event_id);
+      if (!RUNNING_STATUSES.includes(event?.status)) {
+        return res.status(409).json({ error: "This event isn't running any more." });
+      }
+
+      const [player1, player2] = await Promise.all([
+        db.getPlayerById(match.player1_id),
+        match.player2_id ? db.getPlayerById(match.player2_id) : null,
+      ]);
+      let side;
+      if (player1?.user_id === req.auth.userId) side = "player1";
+      else if (player2?.user_id === req.auth.userId) side = "player2";
+      else return res.status(403).json({ error: "You're not a player in this match." });
+
+      const allowedClaims = match.phase === "bracket"
+        ? ["player1_win", "player2_win"]
+        : ["player1_win", "player2_win", "draw", "double_loss"];
+      const claim = req.body?.claim;
+      if (!allowedClaims.includes(claim)) {
+        return res.status(400).json({ error: "Invalid result claim for this match." });
+      }
+
+      const updated = await db.submitMatchClaim(match.id, side, claim);
+      res.json({ match: publicMatch(updated) });
+    } catch (err) {
+      next(err);
     }
+  });
 
-    const roundCount = computeRoundCount(players.length);
-    const eligibility = resolveCutEligibility(event.format, players.length, event.configured_cut_size);
-
-    const updatedEvent = await db.startEvent(event.id, {
-      roundCount,
-      cutEnabled: eligibility.cutEnabled,
-    });
-
-    const pairingInput = players.map((p) => ({
-      id: p.id,
-      points: 0,
-      opponentIds: [],
-      hadBye: p.had_bye,
-      dropped: false,
-    }));
-    const { pairings, byePlayerId } = pairRound(pairingInput);
-    await db.insertRoundMatches(event.id, "swiss", 1, pairings);
-    if (byePlayerId) await db.markPlayersHadBye([byePlayerId]);
-
-    res.json({
-      event: publicEvent(updatedEvent),
-      round1Pairings: pairings,
-      cutFallbackMessage: eligibility.reason,
-    });
-  } catch (err) {
-    next(err);
-  }
-});
-
-// ---------- Reporting results ----------
-
-tournamentsRouter.post("/:id/matches/:matchId/report", async (req, res, next) => {
-  try {
-    const match = await db.getMatchById(req.params.matchId);
-    if (!match || match.event_id !== req.params.id) {
-      return res.status(404).json({ error: "Match not found." });
+  tournamentsRouter.post("/:id/matches/:matchId/override", async (req, res, next) => {
+    try {
+      const event = await requireEventOwnerOrAdmin(req, res, req.params.id);
+      if (!event) return;
+      if (!RUNNING_STATUSES.includes(event.status)) {
+        return res.status(409).json({ error: "This event isn't running any more." });
+      }
+      const match = await db.getMatchById(req.params.matchId);
+      if (!match || match.event_id !== event.id) {
+        return res.status(404).json({ error: "Match not found." });
+      }
+      const allowedResults = match.phase === "bracket"
+        ? ["player1_win", "player2_win"]
+        : ["player1_win", "player2_win", "draw", "double_loss"];
+      if (!allowedResults.includes(req.body?.result)) {
+        return res.status(400).json({ error: "Invalid result for this match." });
+      }
+      const updated = await db.overrideMatchResult(match.id, req.auth.userId, req.body.result);
+      res.json({ match: publicMatch(updated) });
+    } catch (err) {
+      next(err);
     }
-    if (match.result) {
-      return res.status(409).json({ error: "This match's result is already final." });
+  });
+
+  // ---------- Advance: next Swiss round, or the Swiss -> bracket -> done transitions ----------
+
+  tournamentsRouter.post("/:id/advance", async (req, res, next) => {
+    try {
+      const event = await requireEventOwnerOrAdmin(req, res, req.params.id);
+      if (!event) return;
+      if (!RUNNING_STATUSES.includes(event.status)) {
+        return res.status(409).json({ error: "This event isn't running - nothing to advance." });
+      }
+
+      const currentMatches = await db.getMatchesForRound(event.id, event.current_phase, event.current_round);
+      if (currentMatches.some((m) => !m.result)) {
+        return res.status(409).json({ error: "Every match in the current round needs a confirmed result first." });
+      }
+
+      if (event.current_phase === "swiss") {
+        return await advanceFromSwiss(event, res);
+      }
+      return await advanceFromBracket(event, res);
+    } catch (err) {
+      next(err);
     }
+  });
 
-    const [player1, player2] = await Promise.all([
-      db.getPlayerById(match.player1_id),
-      match.player2_id ? db.getPlayerById(match.player2_id) : null,
-    ]);
-    let side;
-    if (player1?.user_id === req.auth.userId) side = "player1";
-    else if (player2?.user_id === req.auth.userId) side = "player2";
-    else return res.status(403).json({ error: "You're not a player in this match." });
-
-    const allowedClaims = match.phase === "bracket"
-      ? ["player1_win", "player2_win"]
-      : ["player1_win", "player2_win", "draw", "double_loss"];
-    const claim = req.body?.claim;
-    if (!allowedClaims.includes(claim)) {
-      return res.status(400).json({ error: "Invalid result claim for this match." });
-    }
-
-    const updated = await db.submitMatchClaim(match.id, side, claim);
-    res.json({ match: publicMatch(updated) });
-  } catch (err) {
-    next(err);
-  }
-});
-
-tournamentsRouter.post("/:id/matches/:matchId/override", async (req, res, next) => {
-  try {
-    const event = await requireEventOwnerOrAdmin(req, res, req.params.id);
-    if (!event) return;
-    const match = await db.getMatchById(req.params.matchId);
-    if (!match || match.event_id !== event.id) {
-      return res.status(404).json({ error: "Match not found." });
-    }
-    const allowedResults = match.phase === "bracket"
-      ? ["player1_win", "player2_win"]
-      : ["player1_win", "player2_win", "draw", "double_loss"];
-    if (!allowedResults.includes(req.body?.result)) {
-      return res.status(400).json({ error: "Invalid result for this match." });
-    }
-    const updated = await db.overrideMatchResult(match.id, req.auth.userId, req.body.result);
-    res.json({ match: publicMatch(updated) });
-  } catch (err) {
-    next(err);
-  }
-});
-
-// ---------- Advance: next Swiss round, or the Swiss -> bracket -> done transitions ----------
-
-tournamentsRouter.post("/:id/advance", async (req, res, next) => {
-  try {
-    const event = await requireEventOwnerOrAdmin(req, res, req.params.id);
-    if (!event) return;
-
-    const currentMatches = await db.getMatchesForRound(event.id, event.current_phase, event.current_round);
-    if (currentMatches.some((m) => !m.result)) {
-      return res.status(409).json({ error: "Every match in the current round needs a confirmed result first." });
-    }
-
-    if (event.current_phase === "swiss") {
-      return await advanceFromSwiss(event, res);
-    }
-    return await advanceFromBracket(event, res);
-  } catch (err) {
-    next(err);
-  }
-});
+  return tournamentsRouter;
+}
 
 async function advanceFromSwiss(event, res) {
   const players = (await db.getPlayersForEvent(event.id)).filter((p) => !p.dropped);

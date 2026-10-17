@@ -93,7 +93,7 @@ authRouter.post("/login", loginLimiter, async (req, res, next) => {
     const cleanEmail = (email || "").trim().toLowerCase();
 
     const { rows } = await pool.query(
-      "SELECT id, email, display_name, avatar_url, role, password_hash, email_verified_at FROM users WHERE email = $1",
+      "SELECT id, email, display_name, avatar_url, role, password_hash, email_verified_at FROM users WHERE email = $1 AND deleted_at IS NULL",
       [cleanEmail]
     );
     const user = rows[0];

@@ -1,10 +1,9 @@
 // Account-settings endpoints that aren't part of the "me" resource
 // (routes/auth.js): changing your password, and asking to have your
-// account deleted. Deletion is request-only for now - there's no
-// self-service "delete immediately" button, and no admin UI yet either;
-// an admin processes account_deletion_requests by hand (query the table
-// directly) the same way shop-owner applications started out before
-// routes/admin.js existed. See migration 003.
+// account deleted. Deletion is request-only - there's no self-service
+// "delete immediately" button; an admin approves (anonymizes) or
+// declines each request from the admin panel - see routes/admin.js and
+// db/accountDeletion.js (migrations 003 and 017).
 
 import { Router } from "express";
 import { requireAuth } from "../middleware/auth.js";

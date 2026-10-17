@@ -51,7 +51,7 @@ export async function updateProfile(userId, { displayName, avatarUrl }) {
 // either way - see routes/auth.js).
 export async function findByEmail(email) {
   const { rows } = await pool.query(
-    "SELECT id, email, display_name, avatar_url, role, email_verified_at FROM users WHERE email = $1",
+    "SELECT id, email, display_name, avatar_url, role, email_verified_at FROM users WHERE email = $1 AND deleted_at IS NULL",
     [email]
   );
   return rows[0] || null;
@@ -64,6 +64,12 @@ export async function markEmailVerified(userId) {
 export async function getAvatarUrl(userId) {
   const { rows } = await pool.query("SELECT avatar_url FROM users WHERE id = $1", [userId]);
   return rows[0]?.avatar_url || null;
+}
+
+/** false for a deleted (anonymized, migration 017) or missing account. */
+export async function isActiveUser(userId) {
+  const { rows } = await pool.query("SELECT 1 FROM users WHERE id = $1 AND deleted_at IS NULL", [userId]);
+  return rows.length > 0;
 }
 
 export async function getPasswordHash(userId) {

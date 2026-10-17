@@ -1318,6 +1318,11 @@ button.danger {
   flex-shrink: 0;
 }
 
+/* Edit / Cancel event, above an event's detail. */
+.event-manage-actions {
+  margin: 4px 0 16px;
+}
+
 .row-actions button {
   font-size: 12px;
   padding: 6px 10px;
@@ -2111,6 +2116,14 @@ dialog.app-dialog textarea {
 .review-history-row { align-items: flex-start; gap: 12px; }
 .review-history-row .status-pill { flex: none; min-width: 92px; text-align: center; }
 .review-history-reason { margin-top: 4px; white-space: pre-wrap; }
+/* Account deletion requests (admin) */
+.deletion-row { align-items: flex-start; cursor: pointer; }
+.deletion-row:hover { border-color: var(--accent); }
+.deletion-summary { margin: 0 0 8px; padding-left: 20px; display: grid; gap: 4px; }
+.deletion-actions { margin-bottom: 8px; }
+.deletion-impact { margin-top: 4px; color: var(--danger); }
+.deletion-decline { margin-top: 8px; display: grid; gap: 6px; }
+
 /* List rows open that shop's detail page (timeline rows inside it don't). */
 .review-history-row[data-history-shop-id] { cursor: pointer; }
 .review-history-row[data-history-shop-id]:hover { border-color: var(--accent); }

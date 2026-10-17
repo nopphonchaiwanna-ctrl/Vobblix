@@ -3,36 +3,19 @@
 // rooms.js's in-memory map - it doesn't need to survive a restart.
 //
 // Two kinds of shop live in the same `shops` table (see migration 002):
-//   - Ad-hoc shops: findOrCreateShop() below, the original "type any
-//     code to get a room" flow. owner_user_id is always NULL for these.
+//   - Plain rooms with no owner (owner_user_id NULL) - today only the
+//     lobby's "default" room (migration 017). join-shop used to create
+//     one for any code typed; it no longer does.
 //   - Owner-created marketplace shops: createOwnedShop() and friends,
 //     reached only through the "become a shop owner" flow (see
 //     routes/shops.js). These carry owner_user_id + a review status.
 
 import { pool } from "./pool.js";
 
-/**
- * Finds a shop by its join code, or creates it if this is the first time
- * anyone has joined that code. A shop's scene_type (and therefore its
- * table layout) is fixed at creation - see README's "Adding a new shop
- * or event". Never sets owner_user_id - an ad-hoc shop has no owner.
- */
-export async function findOrCreateShop(code, { sceneType, name } = {}) {
-  const existing = await pool.query("SELECT * FROM shops WHERE code = $1", [code]);
-  if (existing.rows[0]) return existing.rows[0];
-
-  // ON CONFLICT DO UPDATE (a no-op update) + RETURNING handles two
-  // players opening a brand-new shop code at the same instant - whichever
-  // insert loses the race still gets the winning row back instead of an
-  // empty result.
-  const inserted = await pool.query(
-    `INSERT INTO shops (code, name, scene_type)
-     VALUES ($1, $2, $3)
-     ON CONFLICT (code) DO UPDATE SET code = EXCLUDED.code
-     RETURNING *`,
-    [code, name || code, sceneType]
-  );
-  return inserted.rows[0];
+/** The shop a lobby join code points at, or null - join-shop never creates one. */
+export async function getShopByCode(code) {
+  const { rows } = await pool.query("SELECT * FROM shops WHERE code = $1", [code]);
+  return rows[0] || null;
 }
 
 export async function getShopById(id) {

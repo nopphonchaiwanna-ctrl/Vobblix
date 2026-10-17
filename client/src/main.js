@@ -269,6 +269,16 @@ function showLobbyError(msg) {
   lobbyError.hidden = false;
 }
 
+// A failed shop join sends the player back to the lobby with an error.
+// navigate() runs the /lobby handler later (inside a view transition),
+// and that handler clears the error - so the message is handed to the
+// handler to show, instead of being set here and wiped a moment later.
+let pendingLobbyError = null;
+function returnToLobbyWithError(msg) {
+  pendingLobbyError = msg;
+  navigate("/lobby", { replace: true });
+}
+
 // One of the four auth-card forms (login/register/forgot-password/
 // reset-password) is visible at a time; the tab row only makes sense
 // above login/register, so it hides itself for the other two.
@@ -989,16 +999,14 @@ function enterShop(roomId) {
       showAuthError("Your session expired - please log in again.");
       return;
     }
-    navigate("/lobby", { replace: true });
-    showLobbyError("Can't reach the server. Is it running? See README for `npm run dev`.");
+    returnToLobbyWithError("Can't reach the server. Is it running? See README for `npm run dev`.");
   });
 
   // If the server never acks (e.g. it's up but something's wrong server-side),
   // don't leave the button stuck disabled with no feedback.
   const ackTimeout = setTimeout(() => {
     console.error("[vobblix] join-shop timed out waiting for server ack");
-    navigate("/lobby", { replace: true });
-    showLobbyError("Server didn't respond in time. Check the server terminal for errors.");
+    returnToLobbyWithError("Server didn't respond in time. Check the server terminal for errors.");
     joinBtn.disabled = false;
   }, 6000);
 
@@ -1009,8 +1017,7 @@ function enterShop(roomId) {
     console.log("[vobblix] join-shop ack received:", payload);
 
     if (payload?.error) {
-      navigate("/lobby", { replace: true });
-      showLobbyError(payload.error);
+      returnToLobbyWithError(payload.error);
       joinBtn.disabled = false;
       return;
     }
@@ -1204,6 +1211,10 @@ route("/lobby", () => {
   lobby.hidden = false;
   activeMainPath = "/lobby";
   lobbyError.hidden = true;
+  if (pendingLobbyError) {
+    showLobbyError(pendingLobbyError);
+    pendingLobbyError = null;
+  }
   // enterShop() disables this while a join is in flight, but only
   // re-enables it on a *failed* join (see its connect_error/timeout/
   // payload.error branches) - a successful join leaves it disabled
@@ -1270,6 +1281,16 @@ route("/shop-events", () => {
     return;
   }
   eventsPanel.open({ shopId: currentShopDbId });
+});
+
+// Deep link to one event - where an "event cancelled" notification
+// points (server/src/routes/tournaments.js's cancel route).
+route("/events/:eventId", ({ eventId }) => {
+  if (!session) {
+    navigate("/login", { replace: true });
+    return;
+  }
+  eventsPanel.open({ eventId });
 });
 
 route("/my-shop", () => {

@@ -1,9 +1,9 @@
 // Scene registry: the single place that knows about every shop/event
 // floor layout. Two kinds of shop draw from here:
 //
-//   1. Ad-hoc shops (the original "type any code to get a room" flow -
-//      see db/shops.js's findOrCreateShop). Their scene_type names a
-//      static file below. To add a new one:
+//   1. Plain rooms with no owner (today just "default", created by
+//      migration 017 - join-shop no longer creates shops). Their
+//      scene_type names a static file below. To add a new one:
 //        a. Create server/src/scenes/<your-scene-id>.js exporting `id`,
 //           `label`, `FLOOR_WIDTH`, `FLOOR_HEIGHT`, `TABLES` (see
 //           default.js).

@@ -20,6 +20,12 @@ import {
   getShopReviewDetail,
 } from "../db/shops.js";
 import { createNotification, publicNotification } from "../db/notifications.js";
+import {
+  listPendingDeletionRequests,
+  getDeletionRequestDetail,
+  approveDeletionRequest,
+  declineDeletionRequest,
+} from "../db/accountDeletion.js";
 import { isValidTheme, DEFAULT_THEME_ID } from "../scenes/themes.js";
 import { DEFAULT_LAYOUT_TEMPLATE_ID } from "../scenes/templates.js";
 
@@ -134,6 +140,63 @@ export function createAdminRouter(io) {
       const detail = await getShopReviewDetail(req.params.id);
       if (!detail) return res.status(404).json({ error: "No owner shop with that id." });
       res.json(detail);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // ---------- Account deletion requests ----------
+  // Approving anonymizes the account (see db/accountDeletion.js for
+  // exactly what's scrubbed vs kept) and kicks its live sockets.
+
+  adminRouter.get("/deletion-requests", async (_req, res, next) => {
+    try {
+      res.json({ requests: await listPendingDeletionRequests() });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  adminRouter.get("/deletion-requests/:id", async (req, res, next) => {
+    try {
+      const detail = await getDeletionRequestDetail(req.params.id);
+      if (!detail) return res.status(404).json({ error: "No such deletion request." });
+      res.json(detail);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  adminRouter.post("/deletion-requests/:id/approve", async (req, res, next) => {
+    try {
+      const result = await approveDeletionRequest(req.params.id, req.auth.userId);
+      if (!result) return res.status(409).json({ error: "This request was already handled." });
+      io.in(`user:${result.userId}`).disconnectSockets(true);
+      res.json(result);
+    } catch (err) {
+      if (err.code === "IS_ADMIN") return res.status(409).json({ error: err.message });
+      next(err);
+    }
+  });
+
+  adminRouter.post("/deletion-requests/:id/decline", async (req, res, next) => {
+    try {
+      const reason = (req.body?.reason || "").trim().slice(0, 500);
+      if (!reason) return res.status(400).json({ error: "Enter a reason so the user knows why." });
+      const request = await declineDeletionRequest(req.params.id, req.auth.userId, reason);
+      if (!request) return res.status(409).json({ error: "This request was already handled." });
+      try {
+        const n = await createNotification({
+          userId: request.user_id,
+          kind: "account_deletion_declined",
+          message: `Your account deletion request was declined: ${reason}`,
+          target: "/settings",
+        });
+        io.to(`user:${request.user_id}`).emit("notification:new", publicNotification(n));
+      } catch (err) {
+        console.error("[admin] failed to notify user of declined deletion", err);
+      }
+      res.json({ request });
     } catch (err) {
       next(err);
     }

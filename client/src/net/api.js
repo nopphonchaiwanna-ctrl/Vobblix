@@ -200,6 +200,24 @@ export function adminListShopReviews(token) {
   return request("/admin/shop-reviews", { token });
 }
 
+// Account deletion requests - approve anonymizes the account (see
+// server/src/db/accountDeletion.js), decline needs a reason.
+export function adminListDeletionRequests(token) {
+  return request("/admin/deletion-requests", { token });
+}
+
+export function adminGetDeletionRequest(token, id) {
+  return request(`/admin/deletion-requests/${id}`, { token });
+}
+
+export function adminApproveDeletionRequest(token, id) {
+  return request(`/admin/deletion-requests/${id}/approve`, { method: "POST", token });
+}
+
+export function adminDeclineDeletionRequest(token, id, reason) {
+  return request(`/admin/deletion-requests/${id}/decline`, { method: "POST", token, body: JSON.stringify({ reason }) });
+}
+
 // One shop from that tab: { shop, events } (events oldest first).
 export function adminGetShopReviews(token, shopId) {
   return request(`/admin/shops/${shopId}/reviews`, { token });
@@ -273,6 +291,14 @@ export function overrideMatchResult(token, eventId, matchId, result) {
     token,
     body: JSON.stringify({ result }),
   });
+}
+
+export function updateEvent(token, eventId, fields) {
+  return request(`/events/${eventId}`, { method: "PATCH", token, body: JSON.stringify(fields) });
+}
+
+export function cancelEvent(token, eventId) {
+  return request(`/events/${eventId}/cancel`, { method: "POST", token });
 }
 
 export function advanceEvent(token, eventId) {

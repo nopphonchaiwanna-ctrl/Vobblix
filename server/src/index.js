@@ -4,22 +4,22 @@ import cors from "cors";
 import helmet from "helmet";
 import { Server } from "socket.io";
 
-import { resolveScene, DEFAULT_SCENE_ID } from "./scenes/index.js";
+import { resolveScene } from "./scenes/index.js";
 import { verifyToken } from "./auth.js";
-import { getAvatarUrl } from "./db/users.js";
+import { getAvatarUrl, isActiveUser } from "./db/users.js";
 import { authRouter } from "./routes/auth.js";
 import { ownerApplicationsRouter } from "./routes/ownerApplications.js";
 import { accountRouter } from "./routes/account.js";
 import { createAdminRouter } from "./routes/admin.js";
 import { shopsRouter } from "./routes/shops.js";
-import { tournamentsRouter } from "./routes/tournaments.js";
+import { createTournamentsRouter } from "./routes/tournaments.js";
 import { cardsRouter } from "./routes/cards.js";
 import { decksRouter } from "./routes/decks.js";
 import { createOrdersRouter } from "./routes/orders.js";
 import { notificationsRouter } from "./routes/notifications.js";
 import { apiLimiter, socketEventLimiter } from "./middleware/rateLimit.js";
 import { pool } from "./db/pool.js";
-import { findOrCreateShop, insertChatMessage, recentShopMessages, recentTableMessages } from "./db/shops.js";
+import { getShopByCode, insertChatMessage, recentShopMessages, recentTableMessages } from "./db/shops.js";
 import {
   addPlayer,
   removePlayer,
@@ -94,7 +94,7 @@ app.use("/owner-applications", ownerApplicationsRouter);
 app.use("/account", accountRouter);
 app.use("/admin", createAdminRouter(io));
 app.use("/shops", shopsRouter);
-app.use("/events", tournamentsRouter);
+app.use("/events", createTournamentsRouter(io));
 app.use("/cards", cardsRouter);
 app.use("/decks", decksRouter);
 app.use("/orders", createOrdersRouter(io));
@@ -133,6 +133,14 @@ io.use(async (socket, next) => {
   const user = verifyToken(token);
   if (!user) {
     return next(new Error("unauthorized"));
+  }
+  // Same deleted-account check as REST's requireAuth. Fails open on a
+  // DB error, like the avatar lookup below - a hiccup shouldn't lock
+  // everyone out of the floor.
+  try {
+    if (!(await isActiveUser(user.userId))) return next(new Error("unauthorized"));
+  } catch (err) {
+    console.error("[socket] account check failed:", err);
   }
   // avatarUrl isn't in the token itself (see auth.js's verifyToken) -
   // fetched fresh here instead, once per connection, so a photo change
@@ -202,18 +210,19 @@ io.on("connection", (socket) => {
   // it's just sitting on the lobby/admin/owner-dashboard screens.
   socket.join(`user:${socket.user.userId}`);
 
-  socket.on("join-shop", async ({ roomId, sceneType }, ack) => {
+  socket.on("join-shop", async ({ roomId }, ack) => {
     try {
-      console.log(`[join-shop] ${socket.id} user=${socket.user.userId} roomId=${roomId} sceneType=${sceneType}`);
+      console.log(`[join-shop] ${socket.id} user=${socket.user.userId} roomId=${roomId}`);
       const cleanRoomId = (roomId || "").trim().toLowerCase() || "default";
 
-      // A shop's scene is fixed the moment it's first created in Postgres -
-      // a sceneType a client asks for only matters the very first time
-      // this code is used, so everyone in the shop always sees the same
-      // floor. See findOrCreateShop() in db/shops.js.
-      const shop = await findOrCreateShop(cleanRoomId, {
-        sceneType: sceneType || DEFAULT_SCENE_ID,
-      });
+      // Only shops that already exist (owner shops, admin central shops,
+      // the "default" room from migration 017) - typing an unknown code
+      // no longer creates one.
+      const shop = await getShopByCode(cleanRoomId);
+      if (!shop) {
+        ack?.({ error: "No shop with that code - check it and try again." });
+        return;
+      }
 
       // Owner-created shops are gated: only visible to everyone once an
       // admin has published them (see README's "Becoming a shop owner").

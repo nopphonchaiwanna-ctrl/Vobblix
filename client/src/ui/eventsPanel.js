@@ -19,8 +19,12 @@ import {
   reportMatchResult,
   overrideMatchResult,
   advanceEvent,
+  updateEvent,
+  cancelEvent,
 } from "../net/api.js";
 import { escapeHtml } from "./format.js";
+import { showToast } from "./toast.js";
+import { confirmDialog } from "./confirmDialog.js";
 import { icon } from "./icons.js";
 import { initDashboardNav } from "./dashboardNav.js";
 
@@ -94,6 +98,7 @@ export function initEventsPanel({ getToken, getUserId, onBack }) {
   let mode = null; // 'list' | 'detail'
   let shopId = null; // the shop whose event list we came from, if any
   let eventId = null; // the event currently shown in detail, if any
+  let currentEvent = null; // that event's last-fetched data (for Edit)
   let isOwner = false;
 
   // Live countdown for the current round's time limit (purely a
@@ -156,72 +161,7 @@ export function initEventsPanel({ getToken, getUserId, onBack }) {
       showError(err.message);
     }
 
-    const createForm = isOwner
-      ? `<form id="events-create-form">
-           <label>
-             Game
-             <select id="events-create-game">
-               ${Object.entries(GAME_LABELS)
-                 .map(([value, label]) => `<option value="${value}">${escapeHtml(label)}</option>`)
-                 .join("")}
-             </select>
-           </label>
-           <label>
-             Event name
-             <input id="events-create-name" maxlength="80" required />
-           </label>
-           <label>
-             Format
-             <select id="events-create-format">
-               <option value="swiss_only">Swiss only (no top cut)</option>
-               <option value="swiss_cut">Swiss + top-cut bracket</option>
-             </select>
-           </label>
-           <label>
-             Player limit
-             <select id="events-create-maxplayers">
-               <option value="4">4</option>
-               <option value="8">8</option>
-               <option value="16" selected>16</option>
-               <option value="32">32</option>
-               <option value="64">64</option>
-             </select>
-           </label>
-           <label id="events-create-cutsize-field">
-             Cut size
-             <select id="events-create-cutsize">
-               <option value="4">Top 4</option>
-               <option value="8" selected>Top 8</option>
-               <option value="16">Top 16</option>
-               <option value="32">Top 32</option>
-               <option value="64">Top 64</option>
-             </select>
-           </label>
-           <label>
-             Draw / unresolved match counts as
-             <select id="events-create-drawrule">
-               <option value="double_loss" selected>Double loss (both players get 0)</option>
-               <option value="draw">Draw (both players get 1 point)</option>
-             </select>
-           </label>
-           <fieldset class="duration-fieldset">
-             <legend>Round time limit (optional, max 2 days)</legend>
-             <label>
-               Days
-               <select id="events-create-roundtimelimit-days">${rangeOptions(2)}</select>
-             </label>
-             <label>
-               Hours
-               <select id="events-create-roundtimelimit-hours">${rangeOptions(23)}</select>
-             </label>
-             <label>
-               Minutes
-               <select id="events-create-roundtimelimit-minutes">${rangeOptions(59)}</select>
-             </label>
-           </fieldset>
-           <button type="submit">Create event</button>
-         </form>`
-      : "";
+    const createForm = isOwner ? eventFormHtml({ submitLabel: "Create event" }) : "";
 
     const list =
       events.length === 0
@@ -242,39 +182,155 @@ export function initEventsPanel({ getToken, getUserId, onBack }) {
 
     bodyEl.innerHTML = `${createForm}<div class="list">${list}</div>`;
 
-    const createFormEl = el("events-create-form");
-    if (createFormEl) {
-      const formatSelect = el("events-create-format");
-      const cutsizeField = el("events-create-cutsize-field");
+    if (isOwner) {
+      bindEventForm(async (fields) => {
+        await createEvent(getToken(), { shopId, ...fields });
+        showToast(`"${fields.name}" created.`);
+        await renderList();
+      });
+    }
+  }
+
+  // ---------- Event settings form (create + edit) ----------
+
+  /**
+   * One form for creating and editing. `values` pre-fills it (an event
+   * from the API when editing); `basicsOnly` hides everything but the
+   * name and round time limit - all that can change once rounds run
+   * (see the server's PATCH /events/:id).
+   */
+  function eventFormHtml({ values = {}, submitLabel, basicsOnly = false, cancelLabel = null }) {
+    const opt = (value, label, current) =>
+      `<option value="${value}"${String(value) === String(current) ? " selected" : ""}>${escapeHtml(label)}</option>`;
+    const limit = values.roundTimeLimitMinutes || 0;
+    const timeSelect = (id, max, current) =>
+      `<select id="${id}">${rangeOptions(max).replace(`value="${current}"`, `value="${current}" selected`)}</select>`;
+    const structural = basicsOnly
+      ? ""
+      : `
+           <label>
+             Game
+             <select id="events-form-game">
+               ${Object.entries(GAME_LABELS).map(([value, label]) => opt(value, label, values.game)).join("")}
+             </select>
+           </label>`;
+    const settings = basicsOnly
+      ? ""
+      : `
+           <label>
+             Format
+             <select id="events-form-format">
+               ${opt("swiss_only", "Swiss only (no top cut)", values.format)}
+               ${opt("swiss_cut", "Swiss + top-cut bracket", values.format)}
+             </select>
+           </label>
+           <label>
+             Player limit
+             <select id="events-form-maxplayers">
+               ${[4, 8, 16, 32, 64].map((n) => opt(n, String(n), values.maxPlayers ?? 16)).join("")}
+             </select>
+           </label>
+           <label id="events-form-cutsize-field">
+             Cut size
+             <select id="events-form-cutsize">
+               ${[4, 8, 16, 32, 64].map((n) => opt(n, `Top ${n}`, values.configuredCutSize ?? 8)).join("")}
+             </select>
+           </label>
+           <label>
+             Draw / unresolved match counts as
+             <select id="events-form-drawrule">
+               ${opt("double_loss", "Double loss (both players get 0)", values.drawRule ?? "double_loss")}
+               ${opt("draw", "Draw (both players get 1 point)", values.drawRule)}
+             </select>
+           </label>`;
+    return `<form id="events-form">
+           ${structural}
+           <label>
+             Event name
+             <input id="events-form-name" maxlength="80" required value="${escapeHtml(values.name || "")}" />
+           </label>
+           ${settings}
+           <fieldset class="duration-fieldset">
+             <legend>Round time limit (optional, max 2 days)</legend>
+             <label>
+               Days
+               ${timeSelect("events-form-roundtimelimit-days", 2, Math.floor(limit / 1440))}
+             </label>
+             <label>
+               Hours
+               ${timeSelect("events-form-roundtimelimit-hours", 23, Math.floor((limit % 1440) / 60))}
+             </label>
+             <label>
+               Minutes
+               ${timeSelect("events-form-roundtimelimit-minutes", 59, limit % 60)}
+             </label>
+           </fieldset>
+           <div class="row-actions">
+             <button type="submit">${escapeHtml(submitLabel)}</button>
+             ${cancelLabel ? `<button type="button" class="secondary" data-action="cancel-edit">${escapeHtml(cancelLabel)}</button>` : ""}
+           </div>
+         </form>`;
+  }
+
+  /** Wires the rendered #events-form: cut-size visibility + submit -> onSubmit(fields). */
+  function bindEventForm(onSubmit) {
+    const formEl = el("events-form");
+    const formatSelect = el("events-form-format");
+    if (formatSelect) {
+      const cutsizeField = el("events-form-cutsize-field");
       const syncCutsizeVisibility = () => {
         cutsizeField.hidden = formatSelect.value !== "swiss_cut";
       };
       syncCutsizeVisibility();
       formatSelect.addEventListener("change", syncCutsizeVisibility);
-      createFormEl.addEventListener("submit", async (e) => {
-        e.preventDefault();
-        clearError();
-        try {
-          const roundTimeLimitDays = Math.max(0, Number(el("events-create-roundtimelimit-days").value) || 0);
-          const roundTimeLimitHours = Math.max(0, Number(el("events-create-roundtimelimit-hours").value) || 0);
-          const roundTimeLimitMins = Math.max(0, Number(el("events-create-roundtimelimit-minutes").value) || 0);
-          const roundTimeLimitTotal = roundTimeLimitDays * 1440 + roundTimeLimitHours * 60 + roundTimeLimitMins;
-          await createEvent(getToken(), {
-            shopId,
-            name: el("events-create-name").value.trim(),
-            game: el("events-create-game").value,
-            format: formatSelect.value,
-            configuredCutSize: Number(el("events-create-cutsize").value),
-            maxPlayers: Number(el("events-create-maxplayers").value),
-            drawRule: el("events-create-drawrule").value,
-            roundTimeLimitMinutes: roundTimeLimitTotal > 0 ? roundTimeLimitTotal : null,
-          });
-          await renderList();
-        } catch (err) {
-          showError(err.message);
-        }
-      });
     }
+    formEl.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      clearError();
+      const value = (id) => el(id)?.value;
+      const days = Math.max(0, Number(value("events-form-roundtimelimit-days")) || 0);
+      const hours = Math.max(0, Number(value("events-form-roundtimelimit-hours")) || 0);
+      const mins = Math.max(0, Number(value("events-form-roundtimelimit-minutes")) || 0);
+      const total = days * 1440 + hours * 60 + mins;
+      const fields = {
+        name: value("events-form-name").trim(),
+        roundTimeLimitMinutes: total > 0 ? total : null,
+      };
+      if (formatSelect) {
+        Object.assign(fields, {
+          game: value("events-form-game"),
+          format: formatSelect.value,
+          configuredCutSize: Number(value("events-form-cutsize")),
+          maxPlayers: Number(value("events-form-maxplayers")),
+          drawRule: value("events-form-drawrule"),
+        });
+      }
+      try {
+        await onSubmit(fields);
+      } catch (err) {
+        showError(err.message);
+      }
+    });
+  }
+
+  /** Edit mode for the event shown in detail - same form, pre-filled. */
+  function renderEdit(event) {
+    stopRoundTimer();
+    clearError();
+    const basicsOnly = event.status !== "registration";
+    const note = basicsOnly
+      ? `<p class="hint">Rounds are running, so only the name and round time limit can change.</p>`
+      : "";
+    bodyEl.innerHTML = `
+      <p><button type="button" class="link-btn" data-action="cancel-edit">&larr; Back to event</button></p>
+      <h2 class="panel-subhead">Edit event</h2>
+      ${note}
+      ${eventFormHtml({ values: event, submitLabel: "Save changes", basicsOnly, cancelLabel: "Discard" })}`;
+    bindEventForm(async (fields) => {
+      await updateEvent(getToken(), event.id, fields);
+      showToast("Event updated.");
+      await renderDetail();
+    });
   }
 
   // ---------- Detail view ----------
@@ -290,6 +346,7 @@ export function initEventsPanel({ getToken, getUserId, onBack }) {
       return;
     }
     const { event, players, standings, currentRoundMatches, currentRoundStartedAt } = data;
+    currentEvent = event;
     titleEl.textContent = event.name;
     isOwner = await resolveIsOwner(event.shopId);
 
@@ -338,7 +395,16 @@ export function initEventsPanel({ getToken, getUserId, onBack }) {
       body += `<p class="hint">This event was cancelled.</p>`;
     }
 
-    bodyEl.innerHTML = backToListLink + meta + body;
+    // Organizer tools for an event that isn't over yet.
+    const manageable = isOwner && ["registration", "swiss", "bracket"].includes(event.status);
+    const manage = manageable
+      ? `<div class="row-actions event-manage-actions">
+           <button type="button" class="secondary" data-action="edit-event">Edit event</button>
+           <button type="button" class="secondary danger" data-action="cancel-event">Cancel event</button>
+         </div>`
+      : "";
+
+    bodyEl.innerHTML = backToListLink + meta + manage + body;
 
     if (showsRounds && event.roundTimeLimitMinutes && currentRoundStartedAt) {
       const deadlineMs = new Date(currentRoundStartedAt).getTime() + event.roundTimeLimitMinutes * 60_000;
@@ -529,6 +595,19 @@ export function initEventsPanel({ getToken, getUserId, onBack }) {
       } else if (action === "advance") {
         await advanceEvent(getToken(), eventId);
         await renderDetail();
+      } else if (action === "edit-event") {
+        if (currentEvent) renderEdit(currentEvent);
+      } else if (action === "cancel-edit") {
+        await renderDetail();
+      } else if (action === "cancel-event") {
+        const ok = await confirmDialog(
+          "Cancelling stops the event for good - it can't be restarted. Registered players get a notification.",
+          { title: `Cancel "${currentEvent?.name || "this event"}"?`, confirmLabel: "Cancel event", cancelLabel: "Keep event", danger: true }
+        );
+        if (!ok) return;
+        const res = await cancelEvent(getToken(), eventId);
+        showToast(res.notified ? `Event cancelled - ${res.notified} player${res.notified === 1 ? "" : "s"} notified.` : "Event cancelled.");
+        await renderDetail();
       }
     } catch (err) {
       showError(err.message);
@@ -545,7 +624,7 @@ export function initEventsPanel({ getToken, getUserId, onBack }) {
     /** Exactly one of shopId/eventId - shopId opens the list, eventId opens straight to one event's detail. */
     async open({ shopId: openShopId, eventId: openEventId } = {}) {
       document
-        .querySelectorAll("#auth, #lobby, #game-screen, #owner-dashboard, #admin-panel, #orders-panel, #order-thread, #settings-panel")
+        .querySelectorAll("#auth, #lobby, #game-screen, #owner-dashboard, #admin-panel, #orders-panel, #order-thread, #settings-panel, #decks-panel")
         .forEach((s) => (s.hidden = true));
       screen.hidden = false;
 

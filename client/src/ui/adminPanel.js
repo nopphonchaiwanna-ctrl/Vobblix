@@ -14,6 +14,10 @@ import {
   adminCreateCentralShop,
   adminListShopReviews,
   adminGetShopReviews,
+  adminListDeletionRequests,
+  adminGetDeletionRequest,
+  adminApproveDeletionRequest,
+  adminDeclineDeletionRequest,
   shopTemplates,
 } from "../net/api.js";
 import { escapeHtml, formatDate, statusLabel } from "./format.js";
@@ -21,6 +25,7 @@ import { initDashboardNav } from "./dashboardNav.js";
 import { fileToResizedDataUrl } from "./imageUpload.js";
 import { icon } from "./icons.js";
 import { showToast } from "./toast.js";
+import { confirmDialog } from "./confirmDialog.js";
 
 function el(id) {
   return document.getElementById(id);
@@ -280,6 +285,191 @@ export function initAdminPanel({ getToken, onBack }) {
     }
   });
 
+  // ---------- Account deletion requests ----------
+  // List -> detail, same pattern as pending shops: approving can't be
+  // undone, so the decision buttons live on the detail page, next to
+  // exactly what approving would touch.
+  const deletionsEl = el("admin-deletions-list");
+  let deletionsMode = "list"; // 'list' | 'detail'
+
+  const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+  async function renderDeletions() {
+    deletionsMode = "list";
+    const { requests } = await adminListDeletionRequests(getToken());
+    if (requests.length === 0) {
+      deletionsEl.innerHTML = `<p class="list-empty">No pending deletion requests.</p>`;
+      return;
+    }
+    deletionsEl.innerHTML = requests
+      .map((r) => {
+        const impact = [
+          r.owned_shops ? `${plural(r.owned_shops, "shop")} to suspend` : "",
+          r.open_orders ? `${plural(r.open_orders, "open order")} to cancel` : "",
+          r.role === "admin" ? "admin - remove the role first" : "",
+        ].filter(Boolean);
+        return `
+          <div class="row deletion-row" data-deletion-id="${escapeHtml(r.id)}">
+            <div class="row-main">
+              <div class="row-title">${escapeHtml(r.display_name)} &lt;${escapeHtml(r.email)}&gt;</div>
+              <div class="row-meta">requested ${formatDate(r.created_at)} &middot; ${escapeHtml(r.role)}${r.reason ? ` &middot; "${escapeHtml(r.reason)}"` : ""}</div>
+              ${impact.length ? `<div class="row-meta deletion-impact">${escapeHtml(impact.join(" · "))}</div>` : ""}
+            </div>
+            <span class="row-meta">Review &rarr;</span>
+          </div>`;
+      })
+      .join("");
+  }
+
+  function renderDeletionDetail({ request, user, shops, openOrders, activeEvents, counts, history }) {
+    deletionsMode = "detail";
+    const avatar = user.avatar_url
+      ? `<img class="settings-avatar-preview" src="${escapeHtml(user.avatar_url)}" alt="" />`
+      : `<div class="settings-avatar-fallback">${icon("user", "icon-only")}</div>`;
+    const section = (title, items, empty) => `
+      <h3 class="panel-subhead">${title}</h3>
+      ${items.length ? `<div class="list">${items.join("")}</div>` : `<p class="list-empty">${empty}</p>`}`;
+    const row = (main, meta, pill = "") => `
+      <div class="row">
+        <div class="row-main"><div class="row-title">${main}</div>${meta ? `<div class="row-meta">${meta}</div>` : ""}</div>
+        ${pill}
+      </div>`;
+
+    const shopRows = shops.map((sh) =>
+      row(`${escapeHtml(sh.name)} <span class="row-meta">(${escapeHtml(sh.code)})</span>`, "will be suspended and its listings archived",
+        `<span class="status-pill ${escapeHtml(sh.status)}">${escapeHtml(statusLabel(sh.status))}</span>`)
+    );
+    const orderRows = openOrders.map((o) =>
+      row(
+        `${escapeHtml(o.listing_title)} &times; ${o.quantity}`,
+        `${escapeHtml(o.shop_name)} &middot; ${o.side === "buyer" ? "buying from" : "selling to"} ${escapeHtml(o.other_party)} &middot; ${formatDate(o.created_at)} &middot; will be cancelled`,
+        `<span class="status-pill">${escapeHtml(statusLabel(o.status))}</span>`
+      )
+    );
+    const eventRows = activeEvents.map((ev) =>
+      row(
+        escapeHtml(ev.name),
+        `${escapeHtml(ev.shop_name)} &middot; ${
+          ev.status === "registration" ? "registration will be dropped" : "already running - stays as \"Deleted user\" until the organizer drops them"
+        }`,
+        `<span class="status-pill">${escapeHtml(statusLabel(ev.status))}</span>`
+      )
+    );
+    const STATUS_TEXT = { completed: "Approved", cancelled: "Declined", pending: "Pending" };
+    const historyRows = history.map((h) =>
+      row(
+        `${STATUS_TEXT[h.status] || escapeHtml(h.status)} &middot; requested ${formatDate(h.created_at)}`,
+        [
+          h.reason ? `Reason: ${escapeHtml(h.reason)}` : "",
+          h.processed_at ? `handled ${formatDate(h.processed_at)}${h.processed_by_name ? ` by ${escapeHtml(h.processed_by_name)}` : ""}` : "",
+          h.decline_reason ? `Declined because: ${escapeHtml(h.decline_reason)}` : "",
+        ].filter(Boolean).join(" &middot; ")
+      )
+    );
+
+    const pending = request.status === "pending";
+    const isAdmin = user.role === "admin";
+    const actions = !pending
+      ? `<p class="hint">This request was already handled.</p>`
+      : isAdmin
+        ? `<p class="error">This is an admin account - remove the admin role (scripts/set-role.js) before approving.</p>
+           ${declineForm(request.id)}`
+        : `<div class="row-actions deletion-actions">
+             <button type="button" class="danger" data-deletion-approve="${escapeHtml(request.id)}" data-name="${escapeHtml(user.display_name)}">Approve &amp; anonymize</button>
+             <button type="button" class="secondary" data-deletion-decline="${escapeHtml(request.id)}">Decline&hellip;</button>
+           </div>
+           ${declineForm(request.id, true)}`;
+
+    deletionsEl.innerHTML = `
+      <p><button type="button" class="link-btn" data-action="deletions-back">&larr; All deletion requests</button></p>
+      <div class="shop-detail-header">
+        ${avatar}
+        <div class="shop-detail-heading">
+          <div class="row-title">${escapeHtml(user.display_name)}</div>
+          <div class="row-meta">${escapeHtml(user.email)} &middot; ${escapeHtml(user.role)} &middot; member since ${formatDate(user.created_at)}${user.email_verified_at ? "" : " &middot; email not verified"}</div>
+        </div>
+      </div>
+      <p class="row-meta">Requested ${formatDate(request.created_at)}</p>
+      <p>${request.reason ? `Reason given: ${escapeHtml(request.reason)}` : "No reason given."}</p>
+
+      <h3 class="panel-subhead">What approving will do</h3>
+      <ul class="deletion-summary">
+        <li>Name, email, photo and password are wiped - they can't log in again; any open session ends now.</li>
+        <li>${plural(counts.decks, "deck")} deleted; notifications and block lists deleted.</li>
+        <li>${plural(counts.chat_messages, "chat message")} kept, author shown as "Deleted user".</li>
+        <li>${plural(counts.events_played, "event result")} and ${plural(counts.orders_total, "order thread")} kept for the other people in them, shown as "Deleted user".</li>
+      </ul>
+      ${section("Shops", shopRows, "No shops.")}
+      ${section("Open orders", orderRows, "No open orders.")}
+      ${section("Upcoming / running events", eventRows, "Not in any upcoming or running event.")}
+      ${section("Earlier requests", historyRows, "No earlier requests.")}
+
+      <h3 class="panel-subhead">Decision</h3>
+      ${actions}`;
+  }
+
+  function declineForm(requestId, hidden = false) {
+    return `
+      <div class="deletion-decline"${hidden ? " hidden" : ""}>
+        <label for="deletion-decline-reason">Why are you declining? (shown to the user)</label>
+        <textarea id="deletion-decline-reason" rows="2" placeholder="e.g. you still have an open order - finish or cancel it first"></textarea>
+        <div class="row-actions">
+          <button type="button" class="secondary" data-deletion-decline-send="${escapeHtml(requestId)}">Send decline</button>
+        </div>
+      </div>`;
+  }
+
+  deletionsEl.addEventListener("click", async (e) => {
+    const btn = e.target.closest("button");
+    try {
+      if (btn?.dataset.action === "deletions-back") {
+        await renderDeletions();
+        return;
+      }
+      if (btn?.dataset.deletionApprove) {
+        const ok = await confirmDialog(
+          `${btn.dataset.name}'s account will be anonymized for good. This can't be undone.`,
+          { title: "Approve deletion?", confirmLabel: "Anonymize account", cancelLabel: "Keep account", danger: true }
+        );
+        if (!ok) return;
+        const result = await adminApproveDeletionRequest(getToken(), btn.dataset.deletionApprove);
+        const extras = [
+          result.suspendedShops ? `${plural(result.suspendedShops, "shop")} suspended` : "",
+          result.cancelledOrders ? `${plural(result.cancelledOrders, "order")} cancelled` : "",
+        ].filter(Boolean);
+        showToast(`Account anonymized${extras.length ? ` - ${extras.join(", ")}` : ""}.`);
+        await renderDeletions();
+        return;
+      }
+      if (btn?.dataset.deletionDecline) {
+        const form = deletionsEl.querySelector(".deletion-decline");
+        form.hidden = !form.hidden;
+        if (!form.hidden) form.querySelector("textarea").focus();
+        return;
+      }
+      if (btn?.dataset.deletionDeclineSend) {
+        const textarea = el("deletion-decline-reason");
+        const reason = textarea.value.trim();
+        if (!reason) {
+          textarea.focus();
+          showToast("Enter a reason so the user knows why.");
+          return;
+        }
+        await adminDeclineDeletionRequest(getToken(), btn.dataset.deletionDeclineSend, reason);
+        showToast("Request declined - the user has been notified.");
+        await renderDeletions();
+        return;
+      }
+      // Anywhere on a list row opens its detail page.
+      if (deletionsMode !== "list") return;
+      const row = e.target.closest(".row[data-deletion-id]");
+      if (!row) return;
+      renderDeletionDetail(await adminGetDeletionRequest(getToken(), row.dataset.deletionId));
+    } catch (err) {
+      showToast(err.message);
+    }
+  });
+
   async function renderApplications() {
     const { applications } = await adminListApplications(getToken(), "pending");
     if (applications.length === 0) {
@@ -439,7 +629,7 @@ export function initAdminPanel({ getToken, onBack }) {
       screen.hidden = false;
       dashboardNav.setActive("applications");
       historyMode = "list";
-      await Promise.all([renderApplications(), renderShops(), renderCentralShops(), renderHistory()]);
+      await Promise.all([renderApplications(), renderShops(), renderCentralShops(), renderHistory(), renderDeletions()]);
     },
   };
 }
