@@ -554,3 +554,5 @@ git push -u origin main
 Or, in VS Code: open the **Source Control** panel and click
 **Publish to GitHub** for a one-click flow (it creates the remote repo
 for you and signs you in if needed).
+
+ปัญหาที่เจอ ตอนดึงข้อมูลการ์ดอยากแปลการ์ดโดยประหยัดงบโดยไม่ใช้ anthropic ของ claude ทำให้ต้องนั่งดึงข้อมูลเองละโยนให้ claude แปลละส่งสคริปออกมาซึ่งกินโทเค่นเยอะทำให้มีการ insert ไฟล์ที่มี skill ซ้ำแต่คนละรูปเพื่อประหยัดเวลาและโทเค่น

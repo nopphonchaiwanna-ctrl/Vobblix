@@ -46,6 +46,15 @@ const PLACEMENT_LABELS = {
   top64: "Top 64",
 };
 
+// Card games an organizer can pick as an event's topic (the create
+// form's "Game" dropdown below). Vanguard is the first one supported -
+// adding another just means another <option> here plus a new value in
+// VALID_GAMES server-side (server/src/routes/tournaments.js) and
+// migration 009's CHECK constraint.
+const GAME_LABELS = {
+  vanguard: "Cardfight!! Vanguard",
+};
+
 function fmtPercent(n) {
   return `${Math.round(n * 1000) / 10}%`;
 }
@@ -150,6 +159,14 @@ export function initEventsPanel({ getToken, getUserId, onBack }) {
     const createForm = isOwner
       ? `<form id="events-create-form">
            <label>
+             Game
+             <select id="events-create-game">
+               ${Object.entries(GAME_LABELS)
+                 .map(([value, label]) => `<option value="${value}">${escapeHtml(label)}</option>`)
+                 .join("")}
+             </select>
+           </label>
+           <label>
              Event name
              <input id="events-create-name" maxlength="80" required />
            </label>
@@ -215,7 +232,7 @@ export function initEventsPanel({ getToken, getUserId, onBack }) {
           <div class="row" data-event-id="${e.id}">
             <div class="row-main">
               <div class="row-title">${escapeHtml(e.name)}</div>
-              <div class="row-meta">${e.format === "swiss_cut" ? `Swiss + top ${e.configuredCutSize}` : "Swiss only"}${e.maxPlayers ? ` &middot; max ${e.maxPlayers}` : ""}${e.roundTimeLimitMinutes ? ` &middot; ${e.roundTimeLimitMinutes} min/round` : ""}</div>
+              <div class="row-meta">${escapeHtml(GAME_LABELS[e.game] || e.game)} &middot; ${e.format === "swiss_cut" ? `Swiss + top ${e.configuredCutSize}` : "Swiss only"}${e.maxPlayers ? ` &middot; max ${e.maxPlayers}` : ""}${e.roundTimeLimitMinutes ? ` &middot; ${e.roundTimeLimitMinutes} min/round` : ""}</div>
             </div>
             <span class="status-pill">${STATUS_LABELS[e.status] || e.status}</span>
             <div class="row-actions"><button type="button" data-action="open-event" data-event-id="${e.id}">Open</button></div>
@@ -245,6 +262,7 @@ export function initEventsPanel({ getToken, getUserId, onBack }) {
           await createEvent(getToken(), {
             shopId,
             name: el("events-create-name").value.trim(),
+            game: el("events-create-game").value,
             format: formatSelect.value,
             configuredCutSize: Number(el("events-create-cutsize").value),
             maxPlayers: Number(el("events-create-maxplayers").value),
@@ -282,7 +300,8 @@ export function initEventsPanel({ getToken, getUserId, onBack }) {
 
     const meta = `
       <p class="hint">
-        ${event.format === "swiss_cut" ? `Swiss + top ${event.effectiveCutSize || event.configuredCutSize}` : "Swiss only"}
+        ${escapeHtml(GAME_LABELS[event.game] || event.game)}
+        &middot; ${event.format === "swiss_cut" ? `Swiss + top ${event.effectiveCutSize || event.configuredCutSize}` : "Swiss only"}
         &middot; ${STATUS_LABELS[event.status] || event.status}
         ${event.status === "swiss" ? `&middot; round ${event.currentRound}/${event.roundCount}` : ""}
         ${event.status === "bracket" ? `&middot; bracket round ${event.currentRound}` : ""}

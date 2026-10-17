@@ -16,3 +16,12 @@ export function escapeHtml(str) {
 export function statusLabel(status) {
   return (status || "").replaceAll("_", " ");
 }
+
+export function formatDate(isoString) {
+  if (!isoString) return "unknown date";
+  return new Date(isoString).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}

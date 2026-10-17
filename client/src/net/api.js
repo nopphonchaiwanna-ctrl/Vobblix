@@ -186,6 +186,25 @@ export function adminRejectApplication(token, id, reason) {
   return request(`/admin/owner-applications/${id}/reject`, { method: "POST", token, body: JSON.stringify({ reason }) });
 }
 
+// Persisted topbar-bell notifications (server/src/routes/notifications.js).
+export function listNotifications(token) {
+  return request("/notifications", { token });
+}
+
+export function markNotificationsRead(token) {
+  return request("/notifications/read-all", { token, method: "POST" });
+}
+
+// Admin panel's Review history tab - every submit/resubmit/publish/reject.
+export function adminListShopReviews(token) {
+  return request("/admin/shop-reviews", { token });
+}
+
+// One shop from that tab: { shop, events } (events oldest first).
+export function adminGetShopReviews(token, shopId) {
+  return request(`/admin/shops/${shopId}/reviews`, { token });
+}
+
 export function adminListShops(token, status = "pending_review") {
   return request(`/admin/shops?status=${status}`, { token });
 }
@@ -196,6 +215,18 @@ export function adminApproveShop(token, id) {
 
 export function adminRejectShop(token, id, reason) {
   return request(`/admin/shops/${id}/reject`, { method: "POST", token, body: JSON.stringify({ reason }) });
+}
+
+// Admin-created "central" shops - separate from the review queue above
+// (adminListShops/adminApproveShop/adminRejectShop), these publish
+// immediately and aren't capped at one per admin - see
+// server/src/routes/admin.js's /admin/central-shops.
+export function adminListCentralShops(token) {
+  return request("/admin/central-shops", { token });
+}
+
+export function adminCreateCentralShop(token, fields) {
+  return request("/admin/central-shops", { method: "POST", token, body: JSON.stringify(fields) });
 }
 
 // ---------- Tournament/event system ----------
@@ -246,4 +277,22 @@ export function overrideMatchResult(token, eventId, matchId, result) {
 
 export function advanceEvent(token, eventId) {
   return request(`/events/${eventId}/advance`, { method: "POST", token });
+}
+
+// ---------- Deck system (Decklog deck-code import - server/src/services/decklogImport.js) ----------
+
+export function listDecks(token) {
+  return request("/decks", { token });
+}
+
+export function getDeck(token, deckId) {
+  return request(`/decks/${deckId}`, { token });
+}
+
+export function importDeck(token, { deckCode, sourceLocale }) {
+  return request("/decks/import", { method: "POST", token, body: JSON.stringify({ deckCode, sourceLocale }) });
+}
+
+export function deleteDeck(token, deckId) {
+  return request(`/decks/${deckId}`, { method: "DELETE", token });
 }

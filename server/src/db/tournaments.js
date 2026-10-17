@@ -9,6 +9,7 @@ import { pool } from "./pool.js";
 export async function createEvent({
   shopId,
   name,
+  game,
   format,
   configuredCutSize,
   drawRule,
@@ -18,10 +19,10 @@ export async function createEvent({
 }) {
   const { rows } = await pool.query(
     `INSERT INTO tournament_events
-       (shop_id, name, format, configured_cut_size, draw_rule, max_players, round_time_limit_minutes, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       (shop_id, name, game, format, configured_cut_size, draw_rule, max_players, round_time_limit_minutes, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      RETURNING *`,
-    [shopId, name, format, configuredCutSize ?? null, drawRule, maxPlayers ?? null, roundTimeLimitMinutes ?? null, createdBy]
+    [shopId, name, game, format, configuredCutSize ?? null, drawRule, maxPlayers ?? null, roundTimeLimitMinutes ?? null, createdBy]
   );
   return rows[0];
 }

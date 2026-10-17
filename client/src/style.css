@@ -385,6 +385,33 @@ button.white {
   border-color: var(--accent);
 }
 
+/* Sits right of the leave button, same chrome. */
+.shop-events-btn {
+  position: absolute;
+  top: 16px;
+  left: 60px;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 12px;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 20px var(--shadow);
+}
+
+.shop-events-btn[hidden] {
+  display: none;
+}
+
+.shop-events-btn:hover {
+  background: var(--surface);
+  border-color: var(--accent);
+}
+
 #chat-panels {
   width: 300px;
   display: flex;
@@ -1296,6 +1323,120 @@ button.danger {
   padding: 6px 10px;
 }
 
+/* My-deck card grid (ui/decksPanel.js) - an image-forward grid of
+   card art grouped by zone (Ride Deck/Main Deck/G Deck), matching how
+   Bushiroad's own Decklog deck view lays a deck out: each physical
+   copy gets its own tile (no "x4" badge - count tiles, or read the
+   zone heading's total), the card image is the whole point, and
+   everything else (grade, Thai skill-text translation, etc.) lives in
+   the tile's hover tooltip instead of competing with the art for
+   space. `auto-fill` + a capped max track width keeps every tile the
+   same size instead of a few tiles stretching to fill a half-empty
+   last row. */
+.deck-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(108px, 136px));
+  justify-content: start;
+  gap: 12px;
+  margin: 8px 0 4px;
+}
+
+.deck-card-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  border-radius: 8px;
+  overflow: clip;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  transition: transform 0.1s ease, border-color 0.1s ease;
+}
+
+.deck-card-tile:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+}
+
+.deck-card-tile img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 5 / 7;
+  object-fit: cover;
+  background: var(--panel);
+}
+
+.deck-card-tile-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  aspect-ratio: 5 / 7;
+  padding: 6px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--muted);
+  background: var(--panel);
+}
+
+/* A handful of real cards are genuinely landscape artwork (see
+   markLandscapeTiles() in decksPanel.js, which adds this class once
+   it measures the loaded image) - give those a landscape box and
+   twice the grid width instead of cropping them into a portrait one. */
+.deck-card-tile--landscape {
+  grid-column: span 2;
+}
+
+.deck-card-tile--landscape img,
+.deck-card-tile--landscape .deck-card-tile-fallback {
+  aspect-ratio: 7 / 5;
+}
+
+.deck-card-tile-qty {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--overlay);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.deck-card-tile-caption {
+  padding: 6px 8px;
+  border-top: 1px solid var(--border);
+}
+
+.deck-card-tile-name {
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.deck-card-tile-grade {
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 1px;
+}
+
+.deck-zone-title {
+  font-size: 15px;
+  margin: 20px 0 4px;
+}
+
+.deck-zone-title:first-of-type {
+  margin-top: 8px;
+}
+
 .status-pill {
   display: inline-block;
   font-size: 11px;
@@ -1839,6 +1980,56 @@ dialog.app-dialog textarea {
   border: 1px solid var(--border);
 }
 
+/* Shop-detail page (see ui/adminPanel.js's renderShopDetail()) - a
+   list<->detail swap inside the "Shops pending" section, same pattern
+   as the events panel's list/detail modes, not a popup. */
+.shop-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.shop-detail-heading {
+  min-width: 0;
+}
+
+.shop-detail-reject {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+
+.shop-detail-reject label {
+  display: block;
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.shop-detail-reject textarea {
+  display: block;
+  width: 100%;
+  margin-bottom: 10px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+/* The pending-shops row itself still has its own one-click Publish
+   button for a quick approve - clicking the rest of the row opens the
+   detail page, which is the only place left to reject (it needs a
+   reason - see the textarea above). */
+#admin-shops-list .row-main {
+  cursor: pointer;
+}
+
 /* Custom scrollbar for the app's scrollable panels - matches the
    theme instead of the OS default gray (see modern-web-guidance's
    customize-scrollbar-color-and-thickness guide). */
@@ -1900,3 +2091,26 @@ dialog.app-dialog textarea {
 .link-btn:hover {
   color: var(--accent-hover, var(--accent));
 }
+
+/* Owner dashboard: rejected-shop banner (see ownerDashboard.js renderStatus) */
+.review-banner {
+  border: 1px solid var(--danger);
+  border-left-width: 4px;
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin: 0 0 16px;
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+.review-banner strong { color: var(--danger); }
+.review-banner p { margin: 6px 0 0; white-space: pre-wrap; }
+.review-banner .review-banner-hint { color: var(--muted, inherit); font-size: 0.9em; }
+
+/* Admin panel: Review history tab */
+.review-history-filter { display: inline-flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.review-history-filter select { width: auto; }
+.review-history-row { align-items: flex-start; gap: 12px; }
+.review-history-row .status-pill { flex: none; min-width: 92px; text-align: center; }
+.review-history-reason { margin-top: 4px; white-space: pre-wrap; }
+/* List rows open that shop's detail page (timeline rows inside it don't). */
+.review-history-row[data-history-shop-id] { cursor: pointer; }
+.review-history-row[data-history-shop-id]:hover { border-color: var(--accent); }

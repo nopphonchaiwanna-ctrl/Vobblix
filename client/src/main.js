@@ -4,6 +4,7 @@ import { initChatUI } from "./ui/chat.js";
 import { initCallUI } from "./ui/call.js";
 import { createCallManager } from "./webrtc/callManager.js";
 import ShopScene from "./scenes/ShopScene.js";
+import { listNotifications, markNotificationsRead } from "./net/api.js";
 import { login, register, me, applyForOwner, myApplication, publicShops, myShop, blockUser, unblockUser, listBlockedUsers, verifyEmail, resendVerification, forgotPassword, resetPassword } from "./net/api.js";
 import { getSavedToken, saveToken, clearToken } from "./auth/session.js";
 import { escapeHtml, statusLabel } from "./ui/format.js";
@@ -15,6 +16,7 @@ import { initAdminPanel } from "./ui/adminPanel.js";
 import { initShopListings } from "./ui/shopListings.js";
 import { initSettingsPanel } from "./ui/settings.js";
 import { initEventsPanel } from "./ui/eventsPanel.js";
+import { initDecksPanel } from "./ui/decksPanel.js";
 import { route, setNotFound, navigate, startRouter } from "./router.js";
 import { showToast } from "./ui/toast.js";
 import { attachPasswordChecklist, attachConfirmPasswordCheck } from "./ui/passwordChecklist.js";
@@ -36,6 +38,7 @@ const authScreen = document.getElementById("auth");
 const lobby = document.getElementById("lobby");
 const gameScreen = document.getElementById("game-screen");
 const leaveShopBtn = document.getElementById("leave-shop-btn");
+const shopEventsBtn = document.getElementById("shop-events-btn");
 
 const authTabLogin = document.getElementById("auth-tab-login");
 const authTabRegister = document.getElementById("auth-tab-register");
@@ -104,6 +107,7 @@ const topbarAvatarFallback = document.getElementById("topbar-avatar-fallback");
 const topbarName = document.getElementById("topbar-name");
 const topbarMenuSettings = document.getElementById("topbar-menu-settings");
 const topbarMenuOrders = document.getElementById("topbar-menu-orders");
+const topbarMenuMydeck = document.getElementById("topbar-menu-mydeck");
 const topbarMenuMyShop = document.getElementById("topbar-menu-myshop");
 const topbarMenuEvents = document.getElementById("topbar-menu-events");
 const topbarMenuAdmin = document.getElementById("topbar-menu-admin");
@@ -171,6 +175,7 @@ const ordersPanel = initOrdersPanel({
   onBack: returnToMainScreen,
 });
 const eventsPanel = initEventsPanel({ getToken, getUserId, onBack: returnToMainScreen });
+const decksPanel = initDecksPanel({ getToken, onBack: returnToMainScreen });
 const ownerDashboard = initOwnerDashboard({
   getToken,
   onBack: () => {
@@ -544,6 +549,10 @@ topbarMenuOrders.addEventListener("click", () => {
   closeTopbarMenu();
   navigate("/orders");
 });
+topbarMenuMydeck.addEventListener("click", () => {
+  closeTopbarMenu();
+  navigate("/mydeck");
+});
 topbarMenuEvents.addEventListener("click", () => {
   closeTopbarMenu();
   navigate("/shop-events");
@@ -585,8 +594,10 @@ topbarThemeToggle.addEventListener("click", () => {
 // toast/sound preferences in Settings (see notifyOrderEvent() below) -
 // the bell always records every order:new/order:message/order:status
 // push regardless of those toggles, since muting the popup/sound isn't
-// the same as not wanting to see it ever. Kept in memory only (not
-// persisted) - it resets on reload, same as the toasts it mirrors.
+// the same as not wanting to see it ever. Order pushes are still kept
+// in memory only; shop-review notifications are persisted server-side
+// (migration 016) and loaded on login by loadPersistedNotifications(),
+// so an owner who was offline when their shop got reviewed still sees it.
 const MAX_NOTIFICATIONS = 20;
 let notifications = [];
 let unreadNotifCount = 0;
@@ -626,18 +637,44 @@ function renderTopbarNotifList() {
     .join("");
 }
 
-function addNotification(message) {
-  notifications.unshift({ id: `${Date.now()}-${Math.random()}`, message, timestamp: Date.now(), read: false });
+// `target` is where clicking the notification in the bell's dropdown
+// navigates to - defaults to "/orders" since that's all this list used
+// to carry; persisted shop-review notifications (notification:new) pass
+// "/my-shop" instead so the click actually lands somewhere useful.
+function addNotification(message, target = "/orders", { id, timestamp } = {}) {
+  if (id && notifications.some((n) => n.id === id)) return;
+  notifications.unshift({ id: id || `${Date.now()}-${Math.random()}`, message, target, timestamp: timestamp || Date.now(), read: false });
   notifications = notifications.slice(0, MAX_NOTIFICATIONS);
   unreadNotifCount += 1;
   renderTopbarNotifBadge();
   if (topbarNotifMenu.matches(":popover-open")) renderTopbarNotifList();
 }
 
+// Replaces the bell's contents with what the server has stored for this
+// account - called from establishSession(), so a fresh login (or a
+// switch to a different account in the same tab) never shows someone
+// else's leftover list.
+async function loadPersistedNotifications() {
+  notifications = [];
+  unreadNotifCount = 0;
+  renderTopbarNotifBadge();
+  try {
+    const { notifications: rows } = await listNotifications(session.token);
+    notifications = rows.map((n) => ({ id: n.id, message: n.message, target: n.target || "/orders", timestamp: n.createdAt, read: n.read }));
+    unreadNotifCount = notifications.filter((n) => !n.read).length;
+    renderTopbarNotifBadge();
+    if (topbarNotifMenu.matches(":popover-open")) renderTopbarNotifList();
+  } catch (err) {
+    console.warn("[vobblix] couldn't load notifications", err);
+  }
+}
+
 topbarNotifList.addEventListener("click", (e) => {
-  if (!e.target.closest(".topbar-notif-item")) return;
+  const item = e.target.closest(".topbar-notif-item");
+  if (!item) return;
+  const n = notifications.find((x) => x.id === item.dataset.notifId);
   closeTopbarNotif();
-  navigate("/orders");
+  navigate(n?.target || "/orders");
 });
 
 // popovertarget="topbar-notif-menu" on the button (see index.html)
@@ -656,6 +693,7 @@ topbarNotifMenu.addEventListener("toggle", (e) => {
   // everything read and clears the badge, same as most bell icons.
   notifications = notifications.map((n) => ({ ...n, read: true }));
   unreadNotifCount = 0;
+  if (session) markNotificationsRead(session.token).catch(() => {});
   renderTopbarNotifBadge();
   renderTopbarNotifList();
 
@@ -684,6 +722,7 @@ function establishSession() {
   refreshTopbarMenu();
   chatUI.setOwnUserId(session.user.id);
   refreshBlockedUsers();
+  loadPersistedNotifications();
 
   // Connected here, not lazily at "enter shop" time, so the account has
   // a live socket - and therefore can receive order:new/order:message/
@@ -705,6 +744,18 @@ function establishSession() {
       orderThread.handleIncomingStatus(orderId, status);
       notifyOrderEvent(`${listingTitle} is now "${status.replaceAll("_", " ")}"`);
     });
+    // Persisted notifications (server/src/routes/admin.js's notifyOwner():
+    // shop approved/rejected) - already saved server-side before this
+    // push, so missing it while offline is fine, it loads on next login.
+    // Refreshes "My Shop" in place if it's open, same as the order:*
+    // handlers above do for the orders panel.
+    socket.on("notification:new", (n) => {
+      if (n.kind?.startsWith("shop_")) {
+        const ownerScreen = document.getElementById("owner-dashboard");
+        if (!ownerScreen.hidden) ownerDashboard.refresh();
+      }
+      notifyShopEvent(n);
+    });
   }
 }
 
@@ -716,6 +767,20 @@ function notifyOrderEvent(message) {
   if (getNotifyOrders()) {
     showToast(message, { onClick: () => navigate("/orders") });
   }
+  if (getNotifySound()) {
+    playNotificationSound();
+  }
+}
+
+// Shop-review notifications are rare and actionable (your shop was turned down, go
+// fix it) rather than the frequent order chatter getNotifyOrders()
+// exists to let someone mute - so unlike notifyOrderEvent() above, the
+// toast isn't gated behind that preference. Still respects the sound
+// toggle, same as everything else.
+function notifyShopEvent({ id, message, target, createdAt }) {
+  const dest = target || "/my-shop";
+  addNotification(message, dest, { id, timestamp: createdAt });
+  showToast(message, { onClick: () => navigate(dest) });
   if (getNotifySound()) {
     playNotificationSound();
   }
@@ -773,6 +838,9 @@ function doLogout() {
   leaveShop();
   session = null;
   socketListenersAttached = false;
+  notifications = [];
+  unreadNotifCount = 0;
+  renderTopbarNotifBadge();
   clearToken();
   disconnectSocket();
   navigate("/login", { replace: true });
@@ -946,7 +1014,7 @@ function enterShop(roomId) {
     }
 
     document
-      .querySelectorAll("#auth, #lobby, #owner-dashboard, #admin-panel, #orders-panel, #order-thread, #settings-panel, #events-panel")
+      .querySelectorAll("#auth, #lobby, #owner-dashboard, #admin-panel, #orders-panel, #order-thread, #settings-panel, #events-panel, #decks-panel")
       .forEach((s) => (s.hidden = true));
     gameScreen.hidden = false;
     activeMainPath = `/shop/${encodeURIComponent(payload.roomId)}`;
@@ -976,6 +1044,7 @@ function enterShop(roomId) {
     shopListings.loadForShop({ isOwnedShop: payload.isOwnedShop, shopDbId: payload.shopDbId });
     currentShopDbId = payload.shopDbId;
     topbarMenuEvents.hidden = !currentShopDbId;
+    shopEventsBtn.hidden = !currentShopDbId;
 
     // Floor size and table layout come entirely from the server (see
     // server/src/scenes/) - the client never hardcodes a shop layout, so
@@ -1027,6 +1096,7 @@ function leaveShop() {
   currentShopRoomId = null;
   currentShopDbId = null;
   topbarMenuEvents.hidden = true;
+  shopEventsBtn.hidden = true;
   gameScreen.hidden = true;
 }
 
@@ -1034,6 +1104,7 @@ function leaveShop() {
 // does the actual teardown + screen swap in one place, same as the
 // topbar brand link and the browser's own Back button.
 leaveShopBtn.addEventListener("click", () => navigate("/lobby"));
+shopEventsBtn.addEventListener("click", () => navigate("/shop-events"));
 
 joinBtn.addEventListener("click", () => joinShopByCode(roomInput.value));
 roomInput.addEventListener("keydown", (e) => {
@@ -1053,7 +1124,7 @@ route("/login", () => {
     return;
   }
   document
-    .querySelectorAll("#lobby, #game-screen, #owner-dashboard, #admin-panel, #orders-panel, #order-thread, #settings-panel, #events-panel")
+    .querySelectorAll("#lobby, #game-screen, #owner-dashboard, #admin-panel, #orders-panel, #order-thread, #settings-panel, #events-panel, #decks-panel")
     .forEach((s) => (s.hidden = true));
   topbar.hidden = true;
   authScreen.hidden = false;
@@ -1071,7 +1142,7 @@ route("/verify-email", async () => {
     return;
   }
   document
-    .querySelectorAll("#lobby, #game-screen, #owner-dashboard, #admin-panel, #orders-panel, #order-thread, #settings-panel, #events-panel")
+    .querySelectorAll("#lobby, #game-screen, #owner-dashboard, #admin-panel, #orders-panel, #order-thread, #settings-panel, #events-panel, #decks-panel")
     .forEach((s) => (s.hidden = true));
   topbar.hidden = true;
   authScreen.hidden = false;
@@ -1100,7 +1171,7 @@ route("/reset-password", () => {
     return;
   }
   document
-    .querySelectorAll("#lobby, #game-screen, #owner-dashboard, #admin-panel, #orders-panel, #order-thread, #settings-panel, #events-panel")
+    .querySelectorAll("#lobby, #game-screen, #owner-dashboard, #admin-panel, #orders-panel, #order-thread, #settings-panel, #events-panel, #decks-panel")
     .forEach((s) => (s.hidden = true));
   topbar.hidden = true;
   authScreen.hidden = false;
@@ -1125,7 +1196,7 @@ route("/lobby", () => {
   }
   leaveShop(); // no-op if we weren't in a shop
   document
-    .querySelectorAll("#owner-dashboard, #admin-panel, #orders-panel, #order-thread, #settings-panel, #events-panel")
+    .querySelectorAll("#owner-dashboard, #admin-panel, #orders-panel, #order-thread, #settings-panel, #events-panel, #decks-panel")
     .forEach((s) => (s.hidden = true));
   authScreen.hidden = true;
   lobby.hidden = false;
@@ -1153,7 +1224,7 @@ route("/shop/:roomId", ({ roomId }) => {
     // opened over it) - just make sure it's the one showing, no need to
     // rejoin anything.
     document
-      .querySelectorAll("#auth, #lobby, #owner-dashboard, #admin-panel, #orders-panel, #order-thread, #settings-panel, #events-panel")
+      .querySelectorAll("#auth, #lobby, #owner-dashboard, #admin-panel, #orders-panel, #order-thread, #settings-panel, #events-panel, #decks-panel")
       .forEach((s) => (s.hidden = true));
     gameScreen.hidden = false;
     activeMainPath = `/shop/${encodeURIComponent(roomId)}`;
@@ -1177,6 +1248,14 @@ route("/orders", () => {
     return;
   }
   ordersPanel.open();
+});
+
+route("/mydeck", () => {
+  if (!session) {
+    navigate("/login", { replace: true });
+    return;
+  }
+  decksPanel.open();
 });
 
 route("/shop-events", () => {

@@ -62,10 +62,18 @@ export async function createOwnedShop({
   logoUrl,
 }) {
   const { rows } = await pool.query(
-    `INSERT INTO shops
-       (code, name, scene_type, owner_user_id, status, layout_template_id, theme, logo_url, description)
-     VALUES ($1, $2, 'owned', $3, 'pending_review', $4, $5, $6, $7)
-     RETURNING *`,
+    // The CTE also logs a 'submitted' row in shop_review_events (migration
+    // 016) in the same statement, so history can never miss a shop.
+    `WITH s AS (
+       INSERT INTO shops
+         (code, name, scene_type, owner_user_id, status, layout_template_id, theme, logo_url, description)
+       VALUES ($1, $2, 'owned', $3, 'pending_review', $4, $5, $6, $7)
+       RETURNING *
+     ), e AS (
+       INSERT INTO shop_review_events (shop_id, action, actor_user_id)
+       SELECT id, 'submitted', owner_user_id FROM s
+     )
+     SELECT * FROM s`,
     [code, name, ownerUserId, layoutTemplateId, theme, logoUrl || null, description || null]
   );
   return rows[0];
@@ -77,6 +85,48 @@ export async function createOwnedShop({
  * or already-pending shop leaves its status alone. Returns null if the
  * shop doesn't exist or isn't owned by ownerUserId.
  */
+/**
+ * Admin-only "central shop" - unlike createOwnedShop(), this publishes
+ * immediately (status = 'published' right away, no pending_review step)
+ * and is flagged is_admin_shop so the one-shop-per-owner unique index
+ * (shops_one_per_owner_idx, narrowed in migration 015) doesn't apply to
+ * it - the same admin account can create as many of these as it wants.
+ * reviewed_by/reviewed_at are still filled in (with the creating admin
+ * themselves) purely for display/audit consistency with owner-created
+ * shops, even though no separate review actually happened.
+ */
+export async function createAdminShop({
+  createdBy,
+  code,
+  name,
+  description,
+  layoutTemplateId,
+  theme,
+  logoUrl,
+}) {
+  const { rows } = await pool.query(
+    `INSERT INTO shops
+       (code, name, scene_type, owner_user_id, status, is_admin_shop,
+        layout_template_id, theme, logo_url, description, reviewed_by, reviewed_at)
+     VALUES ($1, $2, 'owned', $3, 'published', true, $4, $5, $6, $7, $3, now())
+     RETURNING *`,
+    [code, name, createdBy, layoutTemplateId, theme, logoUrl || null, description || null]
+  );
+  return rows[0];
+}
+
+/** Every admin-created central shop, newest first - powers the admin panel's own "Central shops" list. */
+export async function listAdminShops() {
+  const { rows } = await pool.query(
+    `SELECT s.*, u.display_name AS creator_name
+     FROM shops s
+     JOIN users u ON u.id = s.owner_user_id
+     WHERE s.is_admin_shop
+     ORDER BY s.created_at DESC`
+  );
+  return rows;
+}
+
 export async function updateOwnedShop(shopId, ownerUserId, fields) {
   const shop = await getShopById(shopId);
   if (!shop || shop.owner_user_id !== ownerUserId) return null;
@@ -91,14 +141,22 @@ export async function updateOwnedShop(shopId, ownerUserId, fields) {
   const resubmitting = shop.status === "rejected";
 
   const { rows } = await pool.query(
-    `UPDATE shops SET
-       name = $1, description = $2, layout_template_id = $3, theme = $4, logo_url = $5,
-       status = CASE WHEN $6 THEN 'pending_review' ELSE status END,
-       rejection_reason = CASE WHEN $6 THEN NULL ELSE rejection_reason END,
-       reviewed_by = CASE WHEN $6 THEN NULL ELSE reviewed_by END,
-       reviewed_at = CASE WHEN $6 THEN NULL ELSE reviewed_at END
-     WHERE id = $7
-     RETURNING *`,
+    // Clearing rejection_reason here is why shop_review_events exists:
+    // the 'rejected' row there keeps the old reason after this wipes it.
+    `WITH s AS (
+       UPDATE shops SET
+         name = $1, description = $2, layout_template_id = $3, theme = $4, logo_url = $5,
+         status = CASE WHEN $6::boolean THEN 'pending_review' ELSE status END,
+         rejection_reason = CASE WHEN $6::boolean THEN NULL ELSE rejection_reason END,
+         reviewed_by = CASE WHEN $6::boolean THEN NULL ELSE reviewed_by END,
+         reviewed_at = CASE WHEN $6::boolean THEN NULL ELSE reviewed_at END
+       WHERE id = $7
+       RETURNING *
+     ), e AS (
+       INSERT INTO shop_review_events (shop_id, action, actor_user_id)
+       SELECT id, 'resubmitted', owner_user_id FROM s WHERE $6::boolean
+     )
+     SELECT * FROM s`,
     [next.name, next.description, next.layout_template_id, next.theme, next.logo_url, resubmitting, shopId]
   );
   return rows[0];
@@ -118,12 +176,68 @@ export async function listShopsByStatus(status) {
 
 export async function setShopReviewStatus(shopId, { status, reviewedBy, rejectionReason }) {
   const { rows } = await pool.query(
-    `UPDATE shops SET status = $1, reviewed_by = $2, reviewed_at = now(), rejection_reason = $3
-     WHERE id = $4 AND owner_user_id IS NOT NULL
-     RETURNING *`,
+    // Also appends to shop_review_events (migration 016) atomically -
+    // `status` doubles as the event action ('published' | 'rejected').
+    `WITH s AS (
+       UPDATE shops SET status = $1, reviewed_by = $2, reviewed_at = now(), rejection_reason = $3
+       WHERE id = $4 AND owner_user_id IS NOT NULL
+       RETURNING *
+     ), e AS (
+       INSERT INTO shop_review_events (shop_id, action, actor_user_id, reason)
+       SELECT id, $1, $2, $3 FROM s
+     )
+     SELECT * FROM s`,
     [status, reviewedBy, rejectionReason || null, shopId]
   );
   return rows[0] || null;
+}
+
+/**
+ * Admin panel's Review history tab - every logged review step across all
+ * owner shops, newest first (see migration 016). Joins the shop's
+ * *current* name/code, plus who did the step (the owner for
+ * submitted/resubmitted, the admin for published/rejected).
+ */
+export async function listShopReviewEvents({ limit = 200 } = {}) {
+  const { rows } = await pool.query(
+    `SELECT e.id, e.shop_id, e.action, e.reason, e.created_at,
+            s.name AS shop_name, s.code AS shop_code, s.status AS shop_status,
+            o.display_name AS owner_name,
+            a.display_name AS actor_name
+     FROM shop_review_events e
+     JOIN shops s ON s.id = e.shop_id
+     LEFT JOIN users o ON o.id = s.owner_user_id
+     LEFT JOIN users a ON a.id = e.actor_user_id
+     ORDER BY e.created_at DESC
+     LIMIT $1`,
+    [limit]
+  );
+  return rows;
+}
+
+/**
+ * Review history detail page - one owner shop (with its owner's contact)
+ * plus its whole review timeline, oldest first. Returns null if there's
+ * no owner shop with that id (central shops never go through review).
+ */
+export async function getShopReviewDetail(shopId) {
+  const shopRes = await pool.query(
+    `SELECT s.*, u.display_name AS owner_name, u.email AS owner_email
+     FROM shops s JOIN users u ON u.id = s.owner_user_id
+     WHERE s.id = $1`,
+    [shopId]
+  );
+  const shop = shopRes.rows[0];
+  if (!shop) return null;
+  const { rows: events } = await pool.query(
+    `SELECT e.id, e.action, e.reason, e.created_at, a.display_name AS actor_name
+     FROM shop_review_events e
+     LEFT JOIN users a ON a.id = e.actor_user_id
+     WHERE e.shop_id = $1
+     ORDER BY e.created_at ASC`,
+    [shopId]
+  );
+  return { shop, events };
 }
 
 /** Public marketplace directory - published owner shops only, minimal fields. */
@@ -147,7 +261,7 @@ export async function listPublishedShops() {
        WHERE status = 'active'
        GROUP BY shop_id
      ) l ON l.shop_id = s.id
-     WHERE s.owner_user_id IS NOT NULL AND s.status = 'published'
+     WHERE s.status = 'published'
      ORDER BY s.created_at DESC`
   );
   return rows;

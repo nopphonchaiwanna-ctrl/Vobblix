@@ -9,10 +9,13 @@ import { getAvatarUrl } from "./db/users.js";
 import { authRouter } from "./routes/auth.js";
 import { ownerApplicationsRouter } from "./routes/ownerApplications.js";
 import { accountRouter } from "./routes/account.js";
-import { adminRouter } from "./routes/admin.js";
+import { createAdminRouter } from "./routes/admin.js";
 import { shopsRouter } from "./routes/shops.js";
 import { tournamentsRouter } from "./routes/tournaments.js";
+import { cardsRouter } from "./routes/cards.js";
+import { decksRouter } from "./routes/decks.js";
 import { createOrdersRouter } from "./routes/orders.js";
+import { notificationsRouter } from "./routes/notifications.js";
 import { findOrCreateShop, insertChatMessage, recentShopMessages, recentTableMessages } from "./db/shops.js";
 import {
   addPlayer,
@@ -58,10 +61,13 @@ const io = new Server(server, {
 // routes/orders.js).
 app.use("/owner-applications", ownerApplicationsRouter);
 app.use("/account", accountRouter);
-app.use("/admin", adminRouter);
+app.use("/admin", createAdminRouter(io));
 app.use("/shops", shopsRouter);
 app.use("/events", tournamentsRouter);
+app.use("/cards", cardsRouter);
+app.use("/decks", decksRouter);
 app.use("/orders", createOrdersRouter(io));
+app.use("/notifications", notificationsRouter);
 
 // Every socket must carry a valid account token (see client/src/net/socket.js
 // and client/src/auth/session.js) - VobbLiX requires an account, there's

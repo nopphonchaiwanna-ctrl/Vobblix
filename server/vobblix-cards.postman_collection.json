@@ -1,0 +1,70 @@
+{
+  "info": {
+    "name": "VobbLiX - Card catalog + Thai translation test",
+    "description": "Login, search the Vanguard card catalog, then open one card's detail view to trigger (and verify) the lazy Thai translation. Run the 3 requests in order - Login sets {{token}} automatically for the other two.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3001" },
+    { "key": "token", "value": "" },
+    { "key": "cardNumber", "value": "", "description": "Fill this in from a result of the 'Search cards' request below, then run 'Get card detail'." }
+  ],
+  "item": [
+    {
+      "name": "1) Login (gets token)",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": { "raw": "{{baseUrl}}/auth/login", "host": ["{{baseUrl}}"], "path": ["auth", "login"] },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"user1@test.local\",\n  \"password\": \"Test1234!\"\n}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "const data = pm.response.json();",
+              "if (data.token) {",
+              "  pm.collectionVariables.set('token', data.token);",
+              "  console.log('token saved');",
+              "} else {",
+              "  console.warn('no token in response - check email/password, or run node scripts/seed-test-accounts.js first');",
+              "}"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "2) Search cards (q=D-BT01)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": {
+          "raw": "{{baseUrl}}/cards?q=D-BT01",
+          "host": ["{{baseUrl}}"],
+          "path": ["cards"],
+          "query": [{ "key": "q", "value": "D-BT01" }]
+        },
+        "description": "Returns up to 25 matches. Copy any result's cardNumber into the 'cardNumber' collection variable, then run request 3."
+      }
+    },
+    {
+      "name": "3) Get card detail (triggers Thai translation)",
+      "request": {
+        "method": "GET",
+        "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+        "url": {
+          "raw": "{{baseUrl}}/cards/{{cardNumber}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["cards", "{{cardNumber}}"]
+        },
+        "description": "First call for a given card: nameTh/skillTextTh will be null while it translates (a few seconds) if ANTHROPIC_API_KEY isn't set, or filled in if it is. Run this same request again - the second call reads the cached translation instantly."
+      }
+    }
+  ]
+}

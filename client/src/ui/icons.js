@@ -35,6 +35,7 @@ import minimize2 from "lucide-static/icons/minimize-2.svg?raw";
 import x from "lucide-static/icons/x.svg?raw";
 import check from "lucide-static/icons/check.svg?raw";
 import trophy from "lucide-static/icons/trophy.svg?raw";
+import walletCards from "lucide-static/icons/wallet-cards.svg?raw";
 
 const ICONS = {
   spade,
@@ -64,6 +65,7 @@ const ICONS = {
   x,
   check,
   trophy,
+  "wallet-cards": walletCards,
 };
 
 // Strips the `<!-- @license ... -->` comment each raw .svg file starts

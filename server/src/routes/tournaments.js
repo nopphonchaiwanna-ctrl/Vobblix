@@ -30,6 +30,11 @@ export const tournamentsRouter = Router();
 
 const VALID_MAX_PLAYERS = [4, 8, 16, 32, 64];
 const MAX_ROUND_TIME_LIMIT_MINUTES = 2880; // 2 days
+// Card games this platform knows how to run an event for. Vanguard is
+// the first one - more get appended here (and to the client's
+// create-event dropdown, see eventsPanel.js's GAME_LABELS) as support
+// for them is built, same pattern as everything else in migration 009.
+const VALID_GAMES = ["vanguard"];
 
 // ---------- Shared helpers ----------
 
@@ -131,6 +136,7 @@ function publicEvent(event) {
     id: event.id,
     shopId: event.shop_id,
     name: event.name,
+    game: event.game,
     format: event.format,
     configuredCutSize: event.configured_cut_size,
     effectiveCutSize: event.effective_cut_size,
@@ -173,6 +179,7 @@ tournamentsRouter.post("/", requireRole("shop_owner", "admin"), async (req, res,
     if (!shop) return;
 
     const name = (req.body?.name || "").trim().slice(0, 80);
+    const game = req.body?.game;
     const format = req.body?.format === "swiss_cut" ? "swiss_cut" : "swiss_only";
     const drawRule = req.body?.drawRule === "draw" ? "draw" : "double_loss";
     const configuredCutSize = format === "swiss_cut" ? Number(req.body?.configuredCutSize) : null;
@@ -184,6 +191,9 @@ tournamentsRouter.post("/", requireRole("shop_owner", "admin"), async (req, res,
         : Number(roundTimeLimitRaw);
 
     if (!name) return res.status(400).json({ error: "Enter an event name." });
+    if (!VALID_GAMES.includes(game)) {
+      return res.status(400).json({ error: "Choose a supported game." });
+    }
     if (format === "swiss_cut" && !isValidCutSize(configuredCutSize)) {
       return res.status(400).json({ error: "Cut size must be one of 4, 8, 16, 32, 64." });
     }
@@ -200,6 +210,7 @@ tournamentsRouter.post("/", requireRole("shop_owner", "admin"), async (req, res,
     const event = await db.createEvent({
       shopId,
       name,
+      game,
       format,
       configuredCutSize,
       drawRule,

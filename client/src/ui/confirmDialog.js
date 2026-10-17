@@ -14,7 +14,7 @@ function needsClosedByFallback() {
 // Applies the fallback once per dialog element (safe to call every
 // time confirmDialog()/requestAccountDeletionDialog() runs - the
 // `applied` flag on the element keeps a second listener from stacking).
-function withClickOutsideFallback(dialog) {
+export function withClickOutsideFallback(dialog) {
   if (!needsClosedByFallback() || dialog.dataset.clickFallbackApplied) return;
   dialog.dataset.clickFallbackApplied = "true";
   dialog.addEventListener("click", (event) => {

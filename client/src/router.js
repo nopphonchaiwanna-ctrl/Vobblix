@@ -88,13 +88,24 @@ function resolve(pathname) {
  *  own Back button returns to wherever we're navigating from) and runs
  *  the matching route. Pass `{ replace: true }` for a navigation that
  *  shouldn't itself be "back"-able (redirects, logout, etc.) - it
- *  replaces the current entry instead of adding a new one. */
+ *  replaces the current entry instead of adding a new one.
+ *
+ *  Always re-runs the matching route handler, even when `path` is
+ *  already the current URL - only the history entry is skipped in
+ *  that case, never the resolve. Route handlers are written to be
+ *  idempotent re-renders (see the module comment above), and some
+ *  callers rely on that: a panel that was opened by calling its own
+ *  open() directly (bypassing navigate(), e.g. the lobby's per-row
+ *  "Events" button) never changes location.pathname, so its Back
+ *  button's navigate(activeMainPath) targets a path that's already
+ *  current. Skipping resolve() in that case used to leave the screen
+ *  blank - the route that would hide the panel and re-show the
+ *  previous screen never ran. */
 export function navigate(path, { replace = false } = {}) {
   if (replace) {
     history.replaceState(null, "", path);
-  } else {
-    if (path === location.pathname) return; // already there - no-op
-    history.pushState(null, "", path);
+  } else if (path !== location.pathname) {
+    history.pushState(null, "", path); // already there - skip the duplicate entry, but still resolve below
   }
   resolve(path);
 }

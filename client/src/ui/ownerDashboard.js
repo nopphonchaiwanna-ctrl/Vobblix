@@ -14,6 +14,7 @@ import {
 import { formatTHB, escapeHtml, statusLabel } from "./format.js";
 import { fileToResizedDataUrl } from "./imageUpload.js";
 import { initDashboardNav } from "./dashboardNav.js";
+import { showToast } from "./toast.js";
 
 function el(id) {
   return document.getElementById(id);
@@ -31,6 +32,8 @@ export function initOwnerDashboard({ getToken, onBack, onShopChanged, onManageEv
   const screen = el("owner-dashboard");
   const backBtn = el("owner-dashboard-back");
   const statusEl = el("owner-shop-status");
+  const rejectedBanner = el("owner-shop-rejected-banner");
+  const rejectedReasonEl = el("owner-shop-rejected-reason");
 
   const form = el("owner-shop-form");
   const nameInput = el("owner-shop-name");
@@ -123,10 +126,23 @@ export function initOwnerDashboard({ getToken, onBack, onShopChanged, onManageEv
     if (shop?.theme) themeSelect.value = shop.theme;
     logoValue = shop?.logo_url || "";
     setLogoPreview(logoValue);
-    submitBtn.textContent = shop ? "Save changes" : "Create shop & submit for review";
+    // Saving a rejected shop resubmits it (db/shops.js updateOwnedShop) -
+    // say so on the button instead of a plain "Save changes".
+    submitBtn.textContent = !shop
+      ? "Create shop & submit for review"
+      : shop.status === "rejected"
+        ? "Save & resubmit"
+        : "Save changes";
   }
 
   function renderStatus() {
+    // Rejected gets its own prominent banner (reason + what to do next)
+    // instead of one more sentence in the grey hint line.
+    const rejected = shop?.status === "rejected";
+    rejectedBanner.hidden = !rejected;
+    statusEl.hidden = rejected;
+    if (rejected) rejectedReasonEl.textContent = shop.rejection_reason || "No reason given.";
+
     if (!shop) {
       statusEl.textContent = "You don't have a shop yet - fill in the form below to create one.";
       navListings.hidden = true;
@@ -202,11 +218,15 @@ export function initOwnerDashboard({ getToken, onBack, onShopChanged, onManageEv
     };
     try {
       if (shop) {
+        // Saving a rejected shop resubmits it (see renderStatus()).
+        const wasRejected = shop.status === "rejected";
         const res = await updateShop(getToken(), shop.id, fields);
         shop = res.shop;
+        showToast(wasRejected ? "Changes saved and resubmitted - an admin will review your shop again." : "Changes saved.");
       } else {
         const res = await createShop(getToken(), { ...fields, code: codeInput.value.trim().toLowerCase() });
         shop = res.shop;
+        showToast("Shop submitted for review - you'll be notified when an admin decides.");
       }
       fillForm();
       renderStatus();
@@ -262,11 +282,16 @@ export function initOwnerDashboard({ getToken, onBack, onShopChanged, onManageEv
 
   return {
     async open() {
-      document.querySelectorAll("#auth, #lobby, #game-screen, #admin-panel, #orders-panel, #order-thread, #settings-panel, #events-panel").forEach((s) => (s.hidden = true));
+      document.querySelectorAll("#auth, #lobby, #game-screen, #admin-panel, #orders-panel, #order-thread, #settings-panel, #events-panel, #decks-panel").forEach((s) => (s.hidden = true));
       screen.hidden = false;
       dashboardNav.setActive("profile");
       await loadTemplatesOnce();
       await refreshFromServer();
     },
+    // Lets main.js pick up a rejection (or other status change) that
+    // just arrived over the socket while this screen happens to
+    // already be open - same "refresh in place if visible" pattern as
+    // ordersPanel.refresh() for order:* pushes.
+    refresh: refreshFromServer,
   };
 }
