@@ -38,7 +38,7 @@
 //   known gap, see the project doc's "Known outstanding items".
 //
 // Usage:
-//   node scripts/import-vanguard-cards.js [--from=D-BT01] [--to=DZ-BT08] [--delay=700]
+//   node scripts/import-vanguard-cards.js [--from=D-BT01] [--to=DZ-BT17] [--delay=700]
 //
 // Defaults to exactly the range asked for when this was built. Safe to
 // re-run or re-run with a wider --to later - upsertCard() is keyed on

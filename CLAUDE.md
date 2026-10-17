@@ -43,11 +43,22 @@ installed under `.claude/skills/impeccable`). How the code works lives in
 - `cd server && npm run migrate` — applies `server/migrations/NNN_*.sql`
   in order; tracked by filename in `schema_migrations`, never re-runs one.
 - `cd client && npm run build` — production build check.
+- `cd server && npm test` - unit tests (no DB). `npm run
+  test:integration` - real server + Postgres; needs `TEST_DATABASE_URL`
+  in `server/.env` (a disposable local DB, wiped every run - here
+  `vobblix_test` in the `coPlaying` Docker container; the harness
+  refuses Neon). `npm run test:all` - both. CI is written but not
+  active: `docs/ci-workflow.yml` (move to `.github/workflows/ci.yml`;
+  pushing it needs a token with the `workflow` scope, which the
+  current one lacks).
 - Test accounts: `user1@test.local` (customer), `shop1@test.local`
   (shop_owner), password `Test1234!` (`node scripts/seed-test-accounts.js`).
   Make an admin: `node scripts/set-role.js <email> admin`.
 
 ## Conventions (follow these)
+- Server changes: run `npm run test:all` before calling it done, and
+  add/adjust tests for changed behavior (`server/test/`). The tests have
+  already caught real bugs (Swiss rematches, a stuck top-cut bracket).
 - **Never edit a migration that has already run** against Neon — add a new
   numbered one (013→014 lesson: an in-place edit silently never reached
   the real DB).
@@ -82,26 +93,20 @@ installed under `.claude/skills/impeccable`). How the code works lives in
   `decklog_en` / `decklog_en_ja` / `decklog_jp`; needs browser-like
   Referer/Origin/User-Agent headers or Decklog returns `[]`.
 
-## Open items (as of 2026-10-17)
-1. ~~Migrations~~ — done 2026-10-17: Neon is at 016 (014/015 had already
-   run earlier; 016 applied, backfilled 2 review events + 1 notification).
-2. ~~Shops `111`/`222`~~ — already admin central shops (owner = admin,
-   `is_admin_shop`, published; fixed 2026-10-13).
-3. Click-test (never run live yet): Lobby → Published shop → Events → Back
-   shows lobby; Admin shop-detail reject (empty reason blocked); owner
-   gets a persisted bell notification even if offline; My Shop red
-   rejected banner + "Save & resubmit"; Admin "Review history" tab.
-4. `batch1-` / `batch2-manual-translations.sql` not confirmed run on Neon;
-   then `node scripts/backfill-duplicate-translations.js`.
-5. Get a real `decklog_jp` deck code to test that source end-to-end.
-6. Nothing since the "demo_event" commit is committed — commit on `dev`
-   after items 1–3 pass.
-7. Next up: Impeccable `audit` of My Shop and Admin panel; known detector
-   hits: 11px text, two thick `border-left` accents (incl. the new
-   `.review-banner`). Then Thai/English i18n.
-8. `import-vanguard-cards.js` default `--to` is still `DZ-BT08` (real run
-   used `DZ-BT17`).
-
+## Open items (as of 2026-10-18)
+Pre-launch status lives in `docs/status-audit.md`: steps 1-4 are done
+(click-test, server hardening, event edit/cancel + admin account
+deletion + join-shop limits, test suites). Next: 5. TURN server +
+deploy, 6. Thai/English i18n.
+1. Neon is at migration 017 (users.deleted_at, deletion-request
+   processing columns, the `default` room row).
+2. Get a real `decklog_jp` deck code to test that source end-to-end.
+3. Impeccable `audit` of My Shop and Admin panel; known detector hits:
+   11px text, two thick `border-left` accents (incl. `.review-banner`).
+4. Admin's owner-application reject still uses `window.prompt`
+   (`ui/adminPanel.js`) - move it to a dialog/textarea.
+5. Undecided tournament rules: no third-place match (semifinal losers
+   share 3rd); players who drop during Swiss get no final rank.
 Later/not started: marketplace card-linking, event decklists, SMS OTP
-(use a Thai gateway, not Twilio), TURN server, deploy (Cloudflare Pages +
-Render + Neon).
+(use a Thai gateway, not Twilio). Deploy target when we get there:
+Cloudflare Pages (client) + Render (server) + Neon.

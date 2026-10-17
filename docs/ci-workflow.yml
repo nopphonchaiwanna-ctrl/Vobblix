@@ -1,0 +1,62 @@
+# NOT ACTIVE. To turn CI on, move this file to .github/workflows/ci.yml
+# (pushing it needs a GitHub token with the `workflow` scope).
+#
+# Runs the server test suites and a client production build on every
+# push and pull request. The integration tests get their own throwaway
+# Postgres service, so no secrets are needed here.
+name: CI
+
+on:
+  push:
+    branches: [dev, prod]
+  pull_request:
+
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: vobblix_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: server
+    env:
+      TEST_DATABASE_URL: postgres://postgres:test@localhost:5432/vobblix_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+      - name: Unit tests
+        run: npm test
+      - name: Integration tests
+        run: npm run test:integration
+
+  client:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - run: npm ci
+      - name: Production build
+        run: npm run build
