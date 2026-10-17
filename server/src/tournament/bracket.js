@@ -68,10 +68,16 @@ export function resolveCutEligibility(format, totalPlayers, configuredCutSize) {
  *  - exact fit: cut size as configured
  *  - overflow (guaranteed group bigger than the cut): expand to the
  *    next power of 2 that covers everyone guaranteed, capped at the
- *    largest power of 2 that doesn't exceed the total field; if the
+ *    largest power of 2 that doesn't exceed the total field, and fill
+ *    any slots the guaranteed group leaves empty from the next-best
+ *    standings (5 guaranteed -> top 8 = those 5 + the next 3); if the
  *    guaranteed group itself still exceeds that cap (very rare), trim
  *    the guaranteed group down to the cap using the standings order
  *    (which already reflects points -> OPW -> coin-flip)
+ *
+ * `qualified` comes back in standings order (best first) - the seeding
+ * generateBracketRound1() uses for byes. It can still be shorter than
+ * `cutSize` when drops left too few active players to fill the bracket.
  *
  * @param {Array} standings - sorted by sortStandings() in swiss.js
  *   (points -> OPW -> coin-flip), each item needs at least {id, losses}
@@ -105,7 +111,7 @@ export function resolveCutRoster(standings, configuredCutSize, totalPlayers) {
   if (desired <= cap) {
     return {
       cutSize: desired,
-      qualified: guaranteed, // guaranteed.length <= desired by construction; no fill needed, exactly fills it
+      qualified: [...guaranteed, ...nonGuaranteed.slice(0, desired - guaranteed.length)],
       expanded: true,
       guaranteedTrimmed: false,
     };
@@ -122,16 +128,36 @@ export function resolveCutRoster(standings, configuredCutSize, totalPlayers) {
   };
 }
 
-/** Fully randomized round-1 bracket pairings - no seeding by standing. */
-export function generateBracketRound1(qualifiedPlayerIds, rng = Math.random) {
-  const shuffled = [...qualifiedPlayerIds];
+/**
+ * Round-1 bracket pairings: fully randomized, no seeding by standing -
+ * except when there are fewer players than slots (drops emptied some),
+ * where the top-ranked players get the byes. Always cutSize / 2 entries,
+ * so the bracket keeps its shape round to round; bye entries have
+ * player2Id null and are spread out (every other slot) so two bye
+ * holders don't meet in round 2 when that can be avoided.
+ *
+ * @param {string[]} qualifiedPlayerIds - standings order, best first
+ * @param {number} [cutSize] - bracket size; defaults to the player count
+ */
+export function generateBracketRound1(qualifiedPlayerIds, cutSize = qualifiedPlayerIds.length, rng = Math.random) {
+  const byeCount = Math.min(Math.max(cutSize - qualifiedPlayerIds.length, 0), qualifiedPlayerIds.length);
+  const byes = qualifiedPlayerIds.slice(0, byeCount).map((id) => ({ player1Id: id, player2Id: null }));
+
+  const shuffled = qualifiedPlayerIds.slice(byeCount);
   for (let i = shuffled.length - 1; i > 0; i--) {
     const j = Math.floor(rng() * (i + 1));
     [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
   }
-  const pairings = [];
+  const matches = [];
   for (let i = 0; i < shuffled.length; i += 2) {
-    pairings.push({ player1Id: shuffled[i], player2Id: shuffled[i + 1] });
+    matches.push({ player1Id: shuffled[i], player2Id: shuffled[i + 1] ?? null });
+  }
+
+  // Interleave: bye, match, bye, match, ... then whatever's left.
+  const pairings = [];
+  while (byes.length || matches.length) {
+    if (byes.length) pairings.push(byes.shift());
+    if (matches.length) pairings.push(matches.shift());
   }
   return pairings;
 }
@@ -140,11 +166,12 @@ export function generateBracketRound1(qualifiedPlayerIds, rng = Math.random) {
  * Winners of the previous bracket round, in bracket order, paired up
  * for the next round (match i and i+1's winners meet next). Bracket
  * matches need a decisive winner - no draws/double-losses - so this
- * expects every match's result to be 'player1_win' or 'player2_win'.
+ * expects every match's result to be 'player1_win', 'player2_win', or
+ * 'bye' (player 1 advances; see generateBracketRound1).
  */
 export function advanceBracketRound(previousRoundMatchesInOrder) {
   const winners = previousRoundMatchesInOrder.map((m) => {
-    if (m.result === "player1_win") return m.player1Id;
+    if (m.result === "player1_win" || m.result === "bye") return m.player1Id;
     if (m.result === "player2_win") return m.player2Id;
     throw new Error(`Bracket match ${m.id ?? ""} needs a decisive winner, got "${m.result}"`);
   });

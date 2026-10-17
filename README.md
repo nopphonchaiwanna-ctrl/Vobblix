@@ -417,6 +417,44 @@ there's no server in the media path at all. The practical split:
   compute/bandwidth bill down as rooms get bigger, just no longer the
   thing standing between the app and a 20-person room by itself.
 
+## Testing
+
+Server tests use Node's built-in test runner (`node:test`, no extra
+framework):
+
+```bash
+cd server
+npm test                  # unit: tournament math, auth, limiter - no DB needed
+npm run test:integration  # real server + Postgres, end to end
+npm run test:all          # both (also `npm test` from the repo root)
+```
+
+- `server/test/unit/` - pure logic: Swiss pairing/standings
+  (`tournament/swiss.js`), top-cut bracket (`tournament/bracket.js`),
+  passwords/tokens (`auth.js`), the socket flood limiter.
+- `server/test/integration/` - each file resets a test database, runs
+  every migration, starts `src/index.js` on a random port and drives it
+  over HTTP and Socket.io: auth + error responses, full Swiss and top-cut
+  events, event edit/cancel, orders, account deletion + `join-shop`, and
+  rate limits. Helpers live in `test/integration/helpers.js`.
+
+Integration tests need `TEST_DATABASE_URL` (shell or `server/.env`)
+pointing at a **separate, disposable** database whose name contains
+`test` - each run drops its whole `public` schema. The harness refuses a
+name without `test` or the same database as `DATABASE_URL`. Without it
+those tests are skipped, not failed. Any local Postgres works, e.g. one
+in Docker:
+
+```bash
+docker run -d --name vobblix-test-db -e POSTGRES_PASSWORD=test -p 5433:5432 postgres:16
+docker exec vobblix-test-db createdb -U postgres vobblix_test
+# server/.env: TEST_DATABASE_URL=postgres://postgres:test@localhost:5433/vobblix_test
+```
+
+Tests run the server with `RATE_LIMITS=off` (many logins from one IP),
+except `rateLimits.test.js`, which checks the limits themselves. That
+switch is ignored when `NODE_ENV=production`.
+
 ## Production settings
 
 The server hardens itself from env vars (see `server/.env.example`):

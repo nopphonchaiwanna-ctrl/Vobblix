@@ -25,15 +25,13 @@ export function computeRoundCount(playerCount) {
  * Builds the next round's pairings.
  *
  * Standard Swiss: group by matching points, pair within a group, avoid
- * a rematch if an alternative exists. Implemented as a simple greedy
- * pass over the points-sorted field - take the top remaining player,
- * pair them with the highest-remaining opponent they haven't already
- * played. When everyone left in their own bracket is a repeat, this
- * naturally looks further down the list (i.e. "pulls down" from the
- * next bracket) rather than forcing a rematch, which is exactly the
- * standard behavior for the case that matters in practice; a true
- * forced rematch is only used as an absolute last resort (nobody left
- * to pair with that hasn't already been played).
+ * a rematch if an alternative exists. Walks the points-sorted field
+ * taking the top remaining player and the highest-remaining opponent
+ * they haven't already played, which "pulls down" from the next bracket
+ * when everyone left in their own is a repeat - backtracking when an
+ * early choice would strand two players who already met (see
+ * pairWithoutRematch). A forced rematch is only used as an absolute
+ * last resort, when no rematch-free pairing of the field exists.
  *
  * @param {Array} players - active (non-dropped) players
  * @param {() => number} [rng] - injectable for deterministic tests; defaults to Math.random
@@ -65,19 +63,54 @@ export function pairRound(players, rng = Math.random) {
     working = working.slice(0, byeIndex).concat(working.slice(byeIndex + 1));
   }
 
+  // Rematch-free pairing first; the plain greedy pass (which may force a
+  // rematch) only if none exists or the search runs out of budget.
+  const pairings = pairWithoutRematch(working, { steps: REMATCH_SEARCH_BUDGET }) || pairGreedy(working);
+
+  if (byePlayerId) pairings.push({ player1Id: byePlayerId, player2Id: null });
+  return { pairings, byePlayerId };
+}
+
+// Caps the backtracking below - plenty for real fields (it rarely has to
+// backtrack at all), and keeps a pathological 64-player late round from
+// stalling the request.
+const REMATCH_SEARCH_BUDGET = 20000;
+
+function havePlayed(a, b) {
+  return a.opponentIds.includes(b.id) || b.opponentIds.includes(a.id);
+}
+
+/**
+ * Same preference order as the greedy pass (top remaining player takes
+ * the highest-ranked opponent they haven't played), but backtracks when
+ * a choice would leave someone further down with only a rematch - e.g.
+ * pairing c-d first and stranding a-b who already met, when a-c / b-d
+ * works. Returns null if no rematch-free pairing exists (or the budget
+ * runs out).
+ */
+function pairWithoutRematch(pool, budget) {
+  if (pool.length === 0) return [];
+  const [p1, ...rest] = pool;
+  for (let i = 0; i < rest.length; i++) {
+    if (budget.steps-- <= 0) return null;
+    if (havePlayed(p1, rest[i])) continue;
+    const tail = pairWithoutRematch(rest.slice(0, i).concat(rest.slice(i + 1)), budget);
+    if (tail) return [{ player1Id: p1.id, player2Id: rest[i].id }, ...tail];
+  }
+  return null;
+}
+
+function pairGreedy(players) {
   const pairings = [];
-  const pool = [...working];
+  const pool = [...players];
   while (pool.length > 0) {
     const p1 = pool.shift();
-    const played = new Set(p1.opponentIds);
-    let opponentIndex = pool.findIndex((p) => !played.has(p.id));
+    let opponentIndex = pool.findIndex((p) => !havePlayed(p1, p));
     if (opponentIndex === -1) opponentIndex = 0; // forced rematch, last resort
     const [p2] = pool.splice(opponentIndex, 1);
     pairings.push({ player1Id: p1.id, player2Id: p2.id });
   }
-
-  if (byePlayerId) pairings.push({ player1Id: byePlayerId, player2Id: null });
-  return { pairings, byePlayerId };
+  return pairings;
 }
 
 function shuffleGroupedByPoints(players, rng) {

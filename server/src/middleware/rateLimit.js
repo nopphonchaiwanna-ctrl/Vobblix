@@ -7,6 +7,10 @@
 
 import { rateLimit, ipKeyGenerator } from "express-rate-limit";
 
+// RATE_LIMITS=off turns every limit off - for the integration tests,
+// which log in many accounts from one IP. Ignored in production.
+const LIMITS_OFF = process.env.RATE_LIMITS === "off" && process.env.NODE_ENV !== "production";
+
 function limiter({ windowMs, limit, message, byUser = false }) {
   return rateLimit({
     windowMs,
@@ -16,6 +20,7 @@ function limiter({ windowMs, limit, message, byUser = false }) {
     // Same JSON shape as every other error response, so the client's
     // request() helper shows `error` like any other failure.
     message: { error: message, code: "RATE_LIMITED" },
+    skip: () => LIMITS_OFF,
     // Per-account where the route is behind requireAuth (several people
     // behind one NAT/carrier IP shouldn't share a budget), per-IP before
     // login. ipKeyGenerator groups IPv6 addresses by /56 subnet.
@@ -76,6 +81,7 @@ export const deckImportLimiter = limiter({
  * on the closure, so it's dropped with the socket.
  */
 export function socketEventLimiter({ windowMs, limit }) {
+  if (LIMITS_OFF) return () => true;
   let windowStart = 0;
   let count = 0;
   return () => {

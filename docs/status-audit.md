@@ -13,7 +13,7 @@
 | แปลการ์ดภาษาไทย (batch1/batch2 + backfill) | ✅ ครบ (ตรวจแล้ว) | สุ่ม 40 แถวจากแต่ละ batch เจอบน Neon ครบ 40/40; การ์ดที่ยังไม่แปลแต่มีข้อความซ้ำกับใบที่แปลแล้ว = 0 → backfill รันแล้ว. ยังแปลแล้ว 7,649 / 16,546 ใบ (ที่เหลือแปลแบบ lazy ตอนเปิดดู). ควรขีดข้อ 4 ใน CLAUDE.md ออก | S | ไม่ |
 | Click-test ฟลว์รีวิวร้าน / แจ้งเตือน | ⚠️ ยังไม่เคยเทสจริง | ทุกข้อใน CLAUDE.md #3: Lobby→Events→Back, ปฏิเสธร้านโดยไม่กรอกเหตุผล, notification แบบ offline, แบนเนอร์สีแดง + "Save & resubmit", แท็บ Review history | S | **ใช่** |
 | Git / commit | ⚠️ ค้าง | ยังไม่ได้ commit อะไรเลยหลัง `demo_event`: 21 ไฟล์ที่แก้ + ไฟล์ใหม่จำนวนมาก (migration 009–016, cards/decks/notifications, services) | S | **ใช่** (ก่อน deploy) |
-| Automated tests | ❌ ไม่มีเลย | ไม่มีไฟล์เทสหรือ script `test`. จุดที่ควรมีเทสก่อน: `tournament/swiss.js` + `bracket.js` (pairing, OPW), `ORDER_TRANSITIONS`, auth/verify/reset, `decklogImport` | M–L | **ใช่** (อย่างน้อย swiss/bracket/auth/orders) |
+| Automated tests | ✅ ทำแล้ว (2026-10-18) | `node:test` — unit 37 ข้อ (swiss/bracket/auth/limiter) + integration 34 ข้อ (server จริง + Postgres ทดสอบ: auth, error, เล่น event จนจบ 7 แบบ รวม draw/double loss, drop กลางทาง, cut ขยาย/ถูกตัด/ขาดคน, edit/cancel, orders, ลบบัญชี, join-shop, rate limit). เจอและแก้บั๊ก 2 ตัว: Swiss จับคู่ซ้ำโดยไม่จำเป็น; cut ขยายแล้ว bracket ไม่เต็ม → advance 500 และ event ค้างถาวร. เหลือ: ยังไม่มีเทสฝั่ง client, ยังไม่มี CI | S | ไม่ (CI ควรมีก่อนมีคนช่วยพัฒนา) |
 | Rate limiting | ✅ ทำแล้ว (2026-10-18) | `server/src/middleware/rateLimit.js`: ทั้ง API 300/นาที/IP; login 10/15 นาที; register 5/ชม.; อีเมล (resend/forgot) 5/ชม.; `/cards/:no` 60/นาที/บัญชี; `/decks/import` 10/10 นาที/บัญชี; socket chat 8 ข้อความ/10 วิ (แจ้ง toast), move 40/วิ. เหลือ: store เป็น in-memory ใช้ได้กับ server ตัวเดียว ถ้าขยายหลาย instance ต้องย้ายไป Redis | – | – |
 | Error handling (server) | ✅ เกือบครบ (2026-10-18) | มี 404 JSON + error middleware กลาง (413/400/22P02→404/500 แบบไม่เผย stack), `unhandledRejection` log, SIGTERM/SIGINT ปิด socket + pg pool. เหลือ: structured logging / error tracking (เช่น Sentry) | S | ไม่ (ควรมีหลัง launch) |
 | Security hardening | ✅ ทำแล้ว (2026-10-18) | `helmet`, CORS allow-list ใน production, `trust proxy`, `join-shop` เข้าได้แค่ร้านที่มีอยู่ (ไม่สร้างแถวใหม่แล้ว). เหลือเล็กน้อย: JSON body limit 2mb ทุก route; pg `sslmode` warning (pg v9) | S | ไม่ |
@@ -40,7 +40,7 @@
 1. Click-test (#3) → commit บน `dev`
 2. ~~Error middleware + rate limiting + จำกัด CORS/socket origin + helmet~~ (ทำแล้ว 2026-10-18)
 3. ~~Route ยกเลิก/แก้ไข event + ขั้นตอนลบบัญชีฝั่ง admin~~ (ทำแล้ว 2026-10-18 พร้อมจำกัด `join-shop`)
-4. Tests ขั้นต่ำ: swiss/bracket, order transitions, auth flows
+4. ~~Tests ขั้นต่ำ: swiss/bracket, order transitions, auth flows~~ (ทำแล้ว 2026-10-18)
 5. TURN (เช่น coturn หรือบริการ TURN ที่มีแผนฟรี) + ตั้งค่า deploy (`VITE_SERVER_URL`, env, URL ในอีเมล)
 6. i18n ไทย/อังกฤษ (งานใหญ่สุดในกลุ่มต้องทำ)
 

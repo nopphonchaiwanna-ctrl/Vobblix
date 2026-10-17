@@ -582,7 +582,7 @@ async function advanceFromSwiss(event, res) {
   const totalRegistered = (await db.getPlayersForEvent(event.id)).length;
   const cutResult = resolveCutRoster(sorted, event.configured_cut_size, totalRegistered);
   const qualifiedIds = cutResult.qualified.map((p) => p.id);
-  const pairings = generateBracketRound1(qualifiedIds);
+  const pairings = generateBracketRound1(qualifiedIds, cutResult.cutSize);
   await db.insertRoundMatches(event.id, "bracket", 1, pairings);
   const updatedEvent = await db.startBracketPhase(event.id, cutResult.cutSize);
 
@@ -614,6 +614,7 @@ async function advanceFromBracket(event, res) {
   // Everyone eliminated this round gets their placement locked in now.
   const startingRank = Math.floor(cutSize / Math.pow(2, event.current_round)) + 1;
   for (const m of currentMatches) {
+    if (m.result === "bye") continue; // nobody lost a bye
     const loserId = m.result === "player1_win" ? m.player2Id : m.player1Id;
     const label = placementLabel(cutSize, event.current_round, false);
     await db.setPlayerFinalPlacement(loserId, { finalRank: startingRank, finalLabel: label });
@@ -628,7 +629,7 @@ async function advanceFromBracket(event, res) {
 
   // That was the final - exactly one match, and its winner is the champion.
   const final = currentMatches[0];
-  const championId = final.result === "player1_win" ? final.player1Id : final.player2Id;
+  const championId = final.result === "player2_win" ? final.player2Id : final.player1Id;
   await db.setPlayerFinalPlacement(championId, { finalRank: 1, finalLabel: "champion" });
 
   const completed = await db.completeEvent(event.id);
