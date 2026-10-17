@@ -26,6 +26,7 @@
 
 import { Router } from "express";
 import { requireAuth } from "../middleware/auth.js";
+import { cardLimiter } from "../middleware/rateLimit.js";
 import * as db from "../db/cards.js";
 import { translateCardTh } from "../services/translateCardTh.js";
 
@@ -67,7 +68,7 @@ cardsRouter.get("/", async (req, res, next) => {
   }
 });
 
-cardsRouter.get("/:cardNumber(.*)", async (req, res, next) => {
+cardsRouter.get("/:cardNumber(.*)", cardLimiter, async (req, res, next) => {
   try {
     const game = VALID_GAMES.includes(req.query?.game) ? req.query.game : "vanguard";
     let card = await db.getCardByNumber(game, req.params.cardNumber);

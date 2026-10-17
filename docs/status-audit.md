@@ -14,9 +14,9 @@
 | Click-test ฟลว์รีวิวร้าน / แจ้งเตือน | ⚠️ ยังไม่เคยเทสจริง | ทุกข้อใน CLAUDE.md #3: Lobby→Events→Back, ปฏิเสธร้านโดยไม่กรอกเหตุผล, notification แบบ offline, แบนเนอร์สีแดง + "Save & resubmit", แท็บ Review history | S | **ใช่** |
 | Git / commit | ⚠️ ค้าง | ยังไม่ได้ commit อะไรเลยหลัง `demo_event`: 21 ไฟล์ที่แก้ + ไฟล์ใหม่จำนวนมาก (migration 009–016, cards/decks/notifications, services) | S | **ใช่** (ก่อน deploy) |
 | Automated tests | ❌ ไม่มีเลย | ไม่มีไฟล์เทสหรือ script `test`. จุดที่ควรมีเทสก่อน: `tournament/swiss.js` + `bracket.js` (pairing, OPW), `ORDER_TRANSITIONS`, auth/verify/reset, `decklogImport` | M–L | **ใช่** (อย่างน้อย swiss/bracket/auth/orders) |
-| Rate limiting | ❌ ไม่มี | ไม่มี limiter ที่ REST หรือ socket. จุดเสี่ยง: `/auth/login` (brute force), `/auth/register`, `/resend-verification`, `/forgot-password` (ใช้ SMTP ส่งอีเมลรัว ๆ ได้), `/cards/:no` (เผา quota Gemini), `/decks/import` (ยิงเว็บ Decklog), socket `shop-chat`/`table-chat`/`move` (flood) | M | **ใช่** |
-| Error handling (server) | ⚠️ ขาดบางส่วน | route ส่งต่อด้วย `next(err)` แต่ไม่มี error middleware กลาง (ตอนนี้ตกไปที่ default ของ Express ที่ตอบเป็น HTML/stack ถ้าไม่ได้ตั้ง `NODE_ENV=production`); ไม่มี `unhandledRejection`/`SIGTERM` handler; ไม่มี structured logging | S | **ใช่** |
-| Security hardening | ⚠️ ขาด | `cors()` และ socket `origin: "*"` เปิดให้ทุก origin; ไม่มี `helmet`; JSON body limit 2mb ทุก route (ทั้งที่ใช้แค่ avatar); `join-shop` สร้างแถว shop ใหม่จากโค้ดอะไรก็ได้ (`findOrCreateShop`) โดยไม่จำกัด; pg SSL ใช้ `rejectUnauthorized:false` และ `sslmode=require` จะเปลี่ยนความหมายใน pg v9 (มี warning แล้ว) | S–M | **ใช่** |
+| Rate limiting | ✅ ทำแล้ว (2026-10-18) | `server/src/middleware/rateLimit.js`: ทั้ง API 300/นาที/IP; login 10/15 นาที; register 5/ชม.; อีเมล (resend/forgot) 5/ชม.; `/cards/:no` 60/นาที/บัญชี; `/decks/import` 10/10 นาที/บัญชี; socket chat 8 ข้อความ/10 วิ (แจ้ง toast), move 40/วิ. เหลือ: store เป็น in-memory ใช้ได้กับ server ตัวเดียว ถ้าขยายหลาย instance ต้องย้ายไป Redis | – | – |
+| Error handling (server) | ✅ เกือบครบ (2026-10-18) | มี 404 JSON + error middleware กลาง (413/400/22P02→404/500 แบบไม่เผย stack), `unhandledRejection` log, SIGTERM/SIGINT ปิด socket + pg pool. เหลือ: structured logging / error tracking (เช่น Sentry) | S | ไม่ (ควรมีหลัง launch) |
+| Security hardening | ⚠️ ทำไปส่วนใหญ่ (2026-10-18) | ทำแล้ว: `helmet`, CORS REST+socket จำกัดตาม `CORS_ORIGINS`/`CLIENT_URL` ใน production (ไม่ตั้ง = ไม่ start), `trust proxy` สำหรับ Render. เหลือ: `join-shop` ยังสร้างแถว shop ใหม่จากโค้ดอะไรก็ได้; JSON body limit 2mb ทุก route; pg `sslmode` warning (pg v9) | S | ใช่ (`join-shop`) |
 | Deploy (Cloudflare Pages + Render + Neon) | ❌ ยังไม่เริ่ม | ไม่มี config deploy, branch `prod` ยังไม่ได้ใช้. client ต้องตั้ง `VITE_SERVER_URL` (fallback ปัจจุบันคือ `http://<host>:3001` ซึ่งใช้บน prod ไม่ได้); ต้องตั้ง env ฝั่ง server; ลิงก์ในอีเมล verify/reset ต้องชี้โดเมนจริง; Render free tier หลับเองแล้วตัด socket | M | **ใช่** |
 | TURN server | ❌ ไม่มี | `callManager.js` ใช้ STUN ของ Google อย่างเดียว ผู้ใช้ที่อยู่หลัง NAT แบบ symmetric (เครือข่ายมือถือไทยหลายเจ้า) จะต่อ voice/video ไม่ติด | M | **ใช่**, ถ้าจะโฆษณาว่ามี voice/video |
 | Card catalog (หน้าดูการ์ด) | ⚠️ มี backend ไม่มี UI | มี `GET /cards` และ `/cards/:cardNumber` แต่ client ไม่ได้เรียกเลย การ์ดโผล่แค่ในหน้ารายละเอียดเด็ค ทั้งที่ CLAUDE.md บอกว่า "browse a Vanguard card catalog" เป็นฟีเจอร์หลัก | M | แล้วแต่ scope (ถ้าเป็นจุดขาย = ใช่) |
@@ -38,7 +38,7 @@
 ## ลำดับที่แนะนำก่อนเปิดใช้จริง
 
 1. Click-test (#3) → commit บน `dev`
-2. Error middleware + rate limiting + จำกัด CORS/socket origin + helmet
+2. ~~Error middleware + rate limiting + จำกัด CORS/socket origin + helmet~~ (ทำแล้ว 2026-10-18; เหลือจำกัด `join-shop`)
 3. Route ยกเลิก/แก้ไข event + ขั้นตอนลบบัญชีฝั่ง admin
 4. Tests ขั้นต่ำ: swiss/bracket, order transitions, auth flows
 5. TURN (เช่น coturn หรือบริการ TURN ที่มีแผนฟรี) + ตั้งค่า deploy (`VITE_SERVER_URL`, env, URL ในอีเมล)

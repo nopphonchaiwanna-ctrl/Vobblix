@@ -756,6 +756,8 @@ function establishSession() {
       }
       notifyShopEvent(n);
     });
+    // Server-side flood limit on chat (server/src/index.js's chatAllowed()).
+    socket.on("rate-limited", ({ message }) => showToast(message));
   }
 }
 

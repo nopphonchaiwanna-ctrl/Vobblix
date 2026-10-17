@@ -1,6 +1,7 @@
 import http from "node:http";
 import express from "express";
 import cors from "cors";
+import helmet from "helmet";
 import { Server } from "socket.io";
 
 import { resolveScene, DEFAULT_SCENE_ID } from "./scenes/index.js";
@@ -16,6 +17,8 @@ import { cardsRouter } from "./routes/cards.js";
 import { decksRouter } from "./routes/decks.js";
 import { createOrdersRouter } from "./routes/orders.js";
 import { notificationsRouter } from "./routes/notifications.js";
+import { apiLimiter, socketEventLimiter } from "./middleware/rateLimit.js";
+import { pool } from "./db/pool.js";
 import { findOrCreateShop, insertChatMessage, recentShopMessages, recentTableMessages } from "./db/shops.js";
 import {
   addPlayer,
@@ -41,19 +44,47 @@ const PORT = process.env.PORT || 3001;
 const VOICE_LIMIT = 10;
 const VIDEO_LIMIT = 4;
 
+// Browser origins allowed to call the API and open a socket. In
+// production this is CORS_ORIGINS (comma-separated) or, failing that,
+// CLIENT_URL - and the server refuses to start with neither, rather
+// than quietly accepting every origin. In dev any origin is allowed, so
+// testing from another device on the LAN (http://<lan-ip>:5173) works.
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
+const ALLOWED_ORIGINS = (process.env.CORS_ORIGINS || process.env.CLIENT_URL || "")
+  .split(",")
+  .map((o) => o.trim().replace(/\/+$/, ""))
+  .filter(Boolean);
+if (IS_PRODUCTION && ALLOWED_ORIGINS.length === 0) {
+  throw new Error("Set CORS_ORIGINS (or CLIENT_URL) in production - see server/.env.example.");
+}
+const corsOrigin = IS_PRODUCTION ? ALLOWED_ORIGINS : true;
+
 const app = express();
-app.use(cors());
+// Behind Render's (or any host's) proxy, req.ip would otherwise be the
+// proxy's address and every visitor would share one rate-limit bucket.
+// TRUST_PROXY = number of proxy hops; defaults to 1 in production.
+const trustProxy = process.env.TRUST_PROXY ?? (IS_PRODUCTION ? "1" : "0");
+app.set("trust proxy", Number(trustProxy));
+app.use(
+  helmet({
+    // The API only serves JSON to a client on another origin; the
+    // default same-origin resource policy has nothing to protect here.
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+  })
+);
+app.use(cors({ origin: corsOrigin }));
 // Raised from Express's 100kb default - PATCH /me's avatarUrl can now
 // be a resized-photo data: URL (tens of KB; see ui/settings.js's
 // fileToAvatarDataUrl() client-side and routes/auth.js's own length
 // check server-side for the actual cap on what's accepted).
 app.use(express.json({ limit: "2mb" }));
 app.get("/health", (_req, res) => res.json({ ok: true }));
+app.use(apiLimiter);
 app.use("/auth", authRouter);
 
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: { origin: "*" },
+  cors: { origin: corsOrigin },
 });
 
 // Mounted after `io` exists because /orders needs it (to push realtime
@@ -68,6 +99,31 @@ app.use("/cards", cardsRouter);
 app.use("/decks", decksRouter);
 app.use("/orders", createOrdersRouter(io));
 app.use("/notifications", notificationsRouter);
+
+// Unknown routes get JSON like every other error, not Express's HTML page.
+app.use((_req, res) => {
+  res.status(404).json({ error: "Not found." });
+});
+
+// Every route hands failures to next(err) - this is where they land.
+// Clients only ever see a generic message for a 500; the details stay
+// in the server log.
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, _next) => {
+  if (err.type === "entity.too.large") {
+    return res.status(413).json({ error: "That upload is too large." });
+  }
+  if (err.type === "entity.parse.failed") {
+    return res.status(400).json({ error: "Malformed JSON body." });
+  }
+  // Postgres invalid_text_representation - e.g. a non-UUID in /:id.
+  if (err.code === "22P02") {
+    return res.status(404).json({ error: "Not found." });
+  }
+  console.error(`[http] ${req.method} ${req.originalUrl} failed:`, err);
+  if (res.headersSent) return;
+  res.status(500).json({ error: "Something went wrong on our side - try again in a moment." });
+});
 
 // Every socket must carry a valid account token (see client/src/net/socket.js
 // and client/src/auth/session.js) - VobbLiX requires an account, there's
@@ -127,6 +183,18 @@ function leaveShop(socket) {
 }
 
 io.on("connection", (socket) => {
+  // Per-socket flood limits. Movement is sent ~20x/second by a normal
+  // client (see README's "How it works"), so its cap only stops
+  // scripted spam; chat allows a quick burst, then tells the sender why
+  // a message didn't go through instead of dropping it silently.
+  const allowMove = socketEventLimiter({ windowMs: 1000, limit: 40 });
+  const allowChat = socketEventLimiter({ windowMs: 10 * 1000, limit: 8 });
+  function chatAllowed() {
+    if (allowChat()) return true;
+    socket.emit("rate-limited", { message: "You're sending messages too fast - wait a few seconds." });
+    return false;
+  }
+
   console.log(`[connect] ${socket.id} user=${socket.user.userId}`);
 
   // Lets REST routes (routes/orders.js) push realtime events to this
@@ -208,6 +276,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("move", ({ x, y }) => {
+    if (!allowMove()) return;
     const meta = socketMeta.get(socket.id);
     if (!meta) return;
     const player = updatePosition(meta.roomId, socket.id, x, y);
@@ -261,7 +330,7 @@ io.on("connection", (socket) => {
   socket.on("shop-chat", async ({ text }) => {
     const meta = socketMeta.get(socket.id);
     const clean = (text || "").trim().slice(0, 500);
-    if (!meta || !clean) return;
+    if (!meta || !clean || !chatAllowed()) return;
     try {
       const saved = await insertChatMessage({
         shopId: meta.shopDbId,
@@ -290,7 +359,7 @@ io.on("connection", (socket) => {
   socket.on("table-chat", async ({ text }) => {
     const meta = socketMeta.get(socket.id);
     const clean = (text || "").trim().slice(0, 500);
-    if (!meta || !meta.tableId || !clean) return;
+    if (!meta || !meta.tableId || !clean || !chatAllowed()) return;
     try {
       const saved = await insertChatMessage({
         shopId: meta.shopDbId,
@@ -443,3 +512,24 @@ io.on("connection", (socket) => {
 server.listen(PORT, () => {
   console.log(`VobbLiX server listening on http://localhost:${PORT}`);
 });
+
+// Log instead of crashing silently on a stray rejection, and shut down
+// cleanly when the host stops the process (Render sends SIGTERM on every
+// deploy): stop taking connections, close sockets, drain the pg pool.
+process.on("unhandledRejection", (reason) => {
+  console.error("[process] unhandled promise rejection:", reason);
+});
+
+let shuttingDown = false;
+function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[process] ${signal} received - shutting down`);
+  // Hard stop if something hangs (open keep-alive sockets, a slow query).
+  setTimeout(() => process.exit(1), 10000).unref();
+  io.close(() => {
+    pool.end().finally(() => process.exit(0));
+  });
+}
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));

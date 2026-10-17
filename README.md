@@ -414,6 +414,29 @@ there's no server in the media path at all. The practical split:
   compute/bandwidth bill down as rooms get bigger, just no longer the
   thing standing between the app and a 20-person room by itself.
 
+## Production settings
+
+The server hardens itself from env vars (see `server/.env.example`):
+
+- `NODE_ENV=production` turns on the strict mode below. Without it
+  (local dev) every browser origin is allowed, so testing from a phone
+  on the LAN works.
+- `CORS_ORIGINS` (comma-separated, falls back to `CLIENT_URL`) is the
+  allow-list for both REST and Socket.io. In production the server
+  refuses to start with neither set.
+- `TRUST_PROXY` = proxy hops in front of the server (default 1 in
+  production), so rate limits key on the real client IP.
+
+Rate limits live in `server/src/middleware/rateLimit.js` (in-memory, so
+one server process; a second instance would need a shared store):
+a 300/min per-IP ceiling on every route, tighter ones on login,
+register, email-sending routes, card detail (Gemini) and Decklog
+import, plus per-socket caps on chat (the sender gets a
+`rate-limited` event, shown as a toast) and movement. Errors go through
+one JSON error handler at the end of `server/src/index.js`; a 500 never
+leaks the stack to the client. SIGTERM closes sockets and the pg pool
+before exiting.
+
 ## Running it locally
 
 Requires **Node.js 18+** and a Postgres database (see "Setting up

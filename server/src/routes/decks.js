@@ -10,6 +10,7 @@
 
 import { Router } from "express";
 import { requireAuth } from "../middleware/auth.js";
+import { deckImportLimiter } from "../middleware/rateLimit.js";
 import * as db from "../db/decks.js";
 import { fetchDecklogDeck, DecklogImportError } from "../services/decklogImport.js";
 
@@ -79,7 +80,7 @@ decksRouter.get("/:id", async (req, res, next) => {
   }
 });
 
-decksRouter.post("/import", async (req, res, next) => {
+decksRouter.post("/import", deckImportLimiter, async (req, res, next) => {
   try {
     const { deckCode, sourceLocale } = req.body || {};
     if (!deckCode || typeof deckCode !== "string") {

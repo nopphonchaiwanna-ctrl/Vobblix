@@ -16,6 +16,7 @@
 // open part).
 
 import { Router } from "express";
+import { loginLimiter, registerLimiter, emailLimiter } from "../middleware/rateLimit.js";
 import { pool } from "../db/pool.js";
 import { hashPassword, verifyPassword, signToken, isStrongPassword, PASSWORD_REQUIREMENT_MESSAGE } from "../auth.js";
 import { requireAuth } from "../middleware/auth.js";
@@ -44,7 +45,7 @@ async function issueVerificationEmail(user) {
   await sendEmail({ to: user.email, ...verificationEmail(link) });
 }
 
-authRouter.post("/register", async (req, res, next) => {
+authRouter.post("/register", registerLimiter, async (req, res, next) => {
   try {
     const { email, password, displayName } = req.body || {};
     const cleanEmail = (email || "").trim().toLowerCase();
@@ -86,7 +87,7 @@ authRouter.post("/register", async (req, res, next) => {
   }
 });
 
-authRouter.post("/login", async (req, res, next) => {
+authRouter.post("/login", loginLimiter, async (req, res, next) => {
   try {
     const { email, password } = req.body || {};
     const cleanEmail = (email || "").trim().toLowerCase();
@@ -137,7 +138,7 @@ authRouter.post("/verify-email", async (req, res, next) => {
 // whether or not the address is registered/already verified, so this
 // can't be used to probe which emails have accounts - see
 // /forgot-password below for the same reasoning.
-authRouter.post("/resend-verification", async (req, res, next) => {
+authRouter.post("/resend-verification", emailLimiter, async (req, res, next) => {
   try {
     const cleanEmail = (req.body?.email || "").trim().toLowerCase();
     const user = cleanEmail ? await findByEmail(cleanEmail) : null;
@@ -153,7 +154,7 @@ authRouter.post("/resend-verification", async (req, res, next) => {
 // Always responds { ok: true } regardless of whether the email exists -
 // a different response for "no account with that email" would let
 // anyone enumerate registered addresses one guess at a time.
-authRouter.post("/forgot-password", async (req, res, next) => {
+authRouter.post("/forgot-password", emailLimiter, async (req, res, next) => {
   try {
     const cleanEmail = (req.body?.email || "").trim().toLowerCase();
     const user = cleanEmail ? await findByEmail(cleanEmail) : null;
