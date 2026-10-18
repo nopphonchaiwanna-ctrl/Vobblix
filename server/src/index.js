@@ -18,6 +18,8 @@ import { decksRouter } from "./routes/decks.js";
 import { createOrdersRouter } from "./routes/orders.js";
 import { notificationsRouter } from "./routes/notifications.js";
 import { apiLimiter, socketEventLimiter } from "./middleware/rateLimit.js";
+import { requireAuth } from "./middleware/auth.js";
+import { getIceServers } from "./services/iceServers.js";
 import { pool } from "./db/pool.js";
 import { getShopByCode, insertChatMessage, recentShopMessages, recentTableMessages } from "./db/shops.js";
 import {
@@ -99,6 +101,14 @@ app.use("/cards", cardsRouter);
 app.use("/decks", decksRouter);
 app.use("/orders", createOrdersRouter(io));
 app.use("/notifications", notificationsRouter);
+// STUN/TURN servers for a table call - see services/iceServers.js.
+app.get("/webrtc/ice-servers", requireAuth, async (_req, res, next) => {
+  try {
+    res.json({ iceServers: await getIceServers() });
+  } catch (err) {
+    next(err);
+  }
+});
 
 // Unknown routes get JSON like every other error, not Express's HTML page.
 app.use((_req, res) => {

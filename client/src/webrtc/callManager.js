@@ -16,7 +16,16 @@
 
 import { getSocket } from "../net/socket.js";
 
-const ICE_SERVERS = [{ urls: "stun:stun.l.google.com:19302" }];
+// Used until (or if) the server's list arrives - see join().
+const FALLBACK_ICE_SERVERS = [{ urls: "stun:stun.l.google.com:19302" }];
+
+// Video: ask the camera for 720p, cap each outgoing stream's bitrate
+// (mesh = one copy per peer, so 3 at a full 4-video table), and when
+// bandwidth runs short drop frame rate before resolution - for showing
+// cards/faces at a table, sharpness matters more than smooth motion.
+// `ideal`, not `min`: a webcam that can't do 720p still works at its best.
+const VIDEO_IDEAL = { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30, max: 30 } };
+const VIDEO_MAX_BITRATE = 1_500_000; // bps per outgoing stream
 
 /**
  * @param {{
@@ -30,10 +39,12 @@ const ICE_SERVERS = [{ urls: "stun:stun.l.google.com:19302" }];
  *   onMicAutoMuted?: (micMuted: boolean) => void,
  *   onSpeakingChanged?: (id: string, speaking: boolean) => void,
  *   onError?: (message: string) => void,
+ *   fetchIceServers?: () => Promise<RTCIceServer[]>,
  * }} handlers
  */
 export function createCallManager(handlers) {
   const socket = getSocket();
+  let iceServers = FALLBACK_ICE_SERVERS;
   const peers = new Map(); // peerId -> RTCPeerConnection
   const speakingDetectors = new Map(); // "local" | peerId -> detector state
 
@@ -59,13 +70,30 @@ export function createCallManager(handlers) {
   }
 
   function videoConstraints() {
-    return selectedVideoDeviceId ? { deviceId: { exact: selectedVideoDeviceId } } : true;
+    return selectedVideoDeviceId ? { ...VIDEO_IDEAL, deviceId: { exact: selectedVideoDeviceId } } : VIDEO_IDEAL;
+  }
+
+  /** Bitrate cap + keep-resolution preference on a video sender (best effort). */
+  function tuneVideoSender(sender) {
+    if (sender.track) sender.track.contentHint = "detail";
+    const params = sender.getParameters();
+    if (!params.encodings || params.encodings.length === 0) params.encodings = [{}];
+    params.encodings[0].maxBitrate = VIDEO_MAX_BITRATE;
+    params.degradationPreference = "maintain-resolution";
+    sender.setParameters(params).catch(() => {
+      // Not supported here / not negotiated yet - the browser's defaults apply.
+    });
+  }
+
+  function addLocalTrack(pc, track) {
+    const sender = pc.addTrack(track, localStream);
+    if (track.kind === "video") tuneVideoSender(sender);
   }
 
   function attachLocalTracks(pc) {
     if (!localStream) return;
     for (const track of localStream.getTracks()) {
-      pc.addTrack(track, localStream);
+      addLocalTrack(pc, track);
     }
   }
 
@@ -139,7 +167,7 @@ export function createCallManager(handlers) {
   }
 
   function createPeerConnection(peerId) {
-    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    const pc = new RTCPeerConnection({ iceServers });
 
     pc.onicecandidate = (event) => {
       if (event.candidate) {
@@ -269,6 +297,15 @@ export function createCallManager(handlers) {
       return { ok: false, reason: "media-denied" };
     }
 
+    // STUN/TURN list from the server (TURN credentials are short-lived,
+    // so fetched per call). Any failure keeps the STUN-only fallback.
+    try {
+      const fetched = await handlers.fetchIceServers?.();
+      if (Array.isArray(fetched) && fetched.length) iceServers = fetched;
+    } catch {
+      iceServers = FALLBACK_ICE_SERVERS;
+    }
+
     const ack = await emitAck("join-call", {});
     if (!ack?.ok) {
       stopLocalStream();
@@ -388,7 +425,7 @@ export function createCallManager(handlers) {
     // Renegotiate every existing peer connection so they start receiving
     // the new video track too.
     for (const [peerId, pc] of peers) {
-      pc.addTrack(videoTrack, localStream);
+      addLocalTrack(pc, videoTrack);
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
       socket.emit("call-signal", { to: peerId, data: { type: "offer", sdp: offer } });
@@ -477,7 +514,10 @@ export function createCallManager(handlers) {
 
     for (const pc of peers.values()) {
       const sender = pc.getSenders().find((s) => s.track?.kind === "video");
-      if (sender) await sender.replaceTrack(newTrack);
+      if (sender) {
+        await sender.replaceTrack(newTrack);
+        tuneVideoSender(sender);
+      }
     }
 
     handlers.onLocalStream?.(localStream);

@@ -367,12 +367,20 @@ returns that peer list). An existing member only ever answers - so two
 sides never simultaneously try to offer each other, and the client
 doesn't need perfect-negotiation/rollback logic to handle that race.
 
-**No TURN server (yet).** ICE only has a public STUN server configured
-(`client/src/webrtc/callManager.js`'s `ICE_SERVERS`), which is enough
-for most home networks but will fail to connect two peers who are both
-behind strict/symmetric NATs (common on some corporate or mobile
-networks). Adding a TURN server (self-hosted [coturn](https://github.com/coturn/coturn)
-or a hosted one like Twilio's) would fix that - see Roadmap.
+**STUN + TURN.** STUN alone connects most home networks but fails
+between peers behind strict/symmetric NATs (common on mobile and
+corporate networks), so a call fetches its ICE servers from
+`GET /webrtc/ice-servers` when joining (`server/src/services/iceServers.js`):
+Cloudflare Realtime TURN when `CLOUDFLARE_TURN_KEY_ID`/`_API_TOKEN` are
+set (short-lived credentials generated server-side and cached), any
+other TURN server via `TURN_URLS`/`TURN_USERNAME`/`TURN_CREDENTIAL`
+(e.g. self-hosted [coturn](https://github.com/coturn/coturn)), or public
+STUN only when neither is configured or the TURN request fails.
+
+**Video quality.** Cameras are asked for 720p (`ideal`, so a webcam that
+can't do it still works), each outgoing stream is capped at 1.5 Mbps,
+and under bandwidth pressure the encoder keeps resolution and drops
+frame rate instead (`callManager.js`'s `tuneVideoSender`).
 
 **If large rooms (10-30+ people) are ever needed, mesh has to be swapped
 for an SFU - and the deciding factor is room size, not stream count.**
@@ -533,8 +541,9 @@ npm run dev:client
       media server), signaled over the existing table-room Socket.io
       grouping; capped at 10 voice / 4 video per table - see "Voice &
       video calls" above
-- [ ] TURN server for reliable connectivity behind strict/symmetric NAT
-      (mesh calls currently only have STUN - see "Voice & video calls")
+- [x] TURN server for reliable connectivity behind strict/symmetric NAT
+      - Cloudflare Realtime TURN (or any TURN via env), see "Voice &
+      video calls"
 - [ ] If a table's video mesh ever needs to scale past ~4-6 people, swap
       it for an SFU (e.g. LiveKit) rather than growing the mesh further -
       see "If large rooms (10-30+ people) are ever needed" above for why
@@ -553,7 +562,9 @@ npm run dev:client
       nothing left to keep in sync
 - [ ] Sprite art instead of procedurally-drawn circles/squares
 - [ ] Deploy a live demo (client to a static host, server to a small
-      Node host) and link it here
+      Node host) and link it here - config and step-by-step guide are
+      ready: `render.yaml` + `docs/deploy.md` (Cloudflare Pages + Render
+      + Neon)
 - [x] Shop-owner accounts (admin-approved) with their own admin-reviewed
       shops, plus a lightweight buy/sell marketplace with a persisted
       order-chat thread - done as template+parameters shop creation (no

@@ -68,6 +68,15 @@ describe("auth + HTTP error handling", { skip: SKIP_REASON }, () => {
     assert.equal(badId.status, 404);
   });
 
+  test("call ICE servers need a login and fall back to STUN without TURN config", async () => {
+    assert.equal((await api.get("/webrtc/ice-servers")).status, 401);
+    const token = await api.login("newplayer@test.local");
+    const r = await api.get("/webrtc/ice-servers", token);
+    assert.equal(r.status, 200);
+    assert.ok(r.body.iceServers.length > 0);
+    assert.ok(r.body.iceServers.every((s) => !s.credential), "no TURN configured in tests");
+  });
+
   test("security headers are set", async () => {
     const res = await fetch(`${server.url}/health`);
     assert.equal(res.headers.get("x-content-type-options"), "nosniff");

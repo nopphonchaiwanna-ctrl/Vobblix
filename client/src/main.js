@@ -4,7 +4,7 @@ import { initChatUI } from "./ui/chat.js";
 import { initCallUI } from "./ui/call.js";
 import { createCallManager } from "./webrtc/callManager.js";
 import ShopScene from "./scenes/ShopScene.js";
-import { listNotifications, markNotificationsRead } from "./net/api.js";
+import { listNotifications, markNotificationsRead, getIceServers } from "./net/api.js";
 import { login, register, me, applyForOwner, myApplication, publicShops, myShop, blockUser, unblockUser, listBlockedUsers, verifyEmail, resendVerification, forgotPassword, resetPassword } from "./net/api.js";
 import { getSavedToken, saveToken, clearToken } from "./auth/session.js";
 import { escapeHtml, statusLabel } from "./ui/format.js";
@@ -892,6 +892,7 @@ function doLogout() {
 // server's 10-voice/4-video-per-table caps get enforced - see README).
 function setupCall(callUI, chatUI) {
   const manager = createCallManager({
+    fetchIceServers: async () => (await getIceServers(getToken())).iceServers,
     onLocalStream: (stream) => callUI.setLocalStream(stream),
     onPeerJoined: (peer) => {
       callUI.addPeer(peer);

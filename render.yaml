@@ -1,0 +1,48 @@
+# Render Blueprint for the API + Socket.io server (docs/deploy.md walks
+# through using it). The client is a static build on Cloudflare Pages;
+# the database is Neon. This is the web test site and follows the `dev`
+# branch; the real site (`prod`) gets its own service later.
+services:
+  - type: web
+    name: vobblix-dev
+    runtime: node
+    plan: free
+    region: singapore
+    branch: dev
+    rootDir: server
+    buildCommand: npm ci --omit=dev
+    # Migrations are idempotent (schema_migrations), so running them on
+    # every start is safe - and pre-deploy commands aren't on the free plan.
+    startCommand: npm run migrate && npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "22"
+      # Generated once by Render; changing it logs everyone out.
+      - key: JWT_SECRET
+        generateValue: true
+      # Filled in by hand in the Render dashboard (sync: false = never
+      # stored in this file):
+      - key: DATABASE_URL # Neon connection string
+        sync: false
+      - key: CLIENT_URL # the Cloudflare Pages URL - email links + CORS allow-list
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: CLOUDFLARE_TURN_KEY_ID
+        sync: false
+      - key: CLOUDFLARE_TURN_API_TOKEN
+        sync: false

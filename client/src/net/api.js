@@ -29,6 +29,13 @@ async function request(path, { token, ...options } = {}) {
   return body;
 }
 
+// ---------- Calls ----------
+
+// STUN/TURN servers for RTCPeerConnection (server/src/services/iceServers.js).
+export function getIceServers(token) {
+  return request("/webrtc/ice-servers", { token });
+}
+
 // ---------- Account ----------
 
 export function register({ email, password, displayName }) {
