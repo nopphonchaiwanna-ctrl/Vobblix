@@ -417,7 +417,9 @@ button.white {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  height: 700px;
+  /* --game-avail-h: the window height left under the topbar, set by
+     main.js's fitGameViewport() - 700px is the old fixed height. */
+  height: min(700px, var(--game-avail-h, 700px));
 }
 
 .chat-panel {

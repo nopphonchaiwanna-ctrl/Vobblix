@@ -98,14 +98,22 @@ Pre-launch status lives in `docs/status-audit.md`: steps 1-4 are done
 (click-test, server hardening, event edit/cancel + admin account
 deletion + join-shop limits, test suites). Next: 5. TURN server +
 deploy, 6. Thai/English i18n.
-1. Neon is at migration 017 (users.deleted_at, deletion-request
-   processing columns, the `default` room row).
+1. Neon is at migration 018 (017: users.deleted_at, deletion-request
+   processing columns, the `default` room row; 018: owned shops get
+   scene_type 'owned' so 111/222 draw their chosen layout/theme).
 2. Get a real `decklog_jp` deck code to test that source end-to-end.
 3. Impeccable `audit` of My Shop and Admin panel; known detector hits:
    11px text, two thick `border-left` accents (incl. `.review-banner`).
 4. Admin's owner-application reject still uses `window.prompt`
    (`ui/adminPanel.js`) - move it to a dialog/textarea.
-5. Undecided tournament rules: no third-place match (semifinal losers
+5. Video must be at least 720p (user requirement) - today
+   `videoConstraints()` in `webrtc/callManager.js` asks for `video: true`,
+   i.e. the browser default (usually 640x480). Set 720p constraints +
+   sender bitrate; mesh still lets weak phones scale down.
+6. After deploy: load-test how many concurrent players the free tier
+   really holds (estimate ~20-30 online at once, bottleneck Render free
+   CPU on movement broadcasts) - the user wants a measured number.
+7. Undecided tournament rules: no third-place match (semifinal losers
    share 3rd); players who drop during Swiss get no final rank.
 Later/not started: marketplace card-linking, event decklists, SMS OTP
 (use a Thai gateway, not Twilio). Deploy target when we get there:

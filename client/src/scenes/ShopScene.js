@@ -62,8 +62,11 @@ export default class ShopScene extends Phaser.Scene {
     if (this.you.avatarUrl) this.applyAvatarImage("local", this.player, this.you.avatarUrl);
 
     // Camera follows the local player, clamped to the floor
+    // The canvas can be smaller than the floor (main.js sizes it to the
+    // window), so this is what keeps the player on screen.
     this.cameras.main.setBounds(0, 0, this.floorWidth, this.floorHeight);
     this.cameras.main.startFollow(this.player, true, 0.15, 0.15);
+    this.scale.on("resize", (gameSize) => this.cameras.main.setSize(gameSize.width, gameSize.height));
 
     // Existing players already in the room
     for (const p of this.initialPlayers) {

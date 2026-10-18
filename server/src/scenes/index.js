@@ -47,7 +47,11 @@ export function getScene(sceneType) {
  * came from.
  */
 export function resolveScene(shop) {
-  if (shop.scene_type === OWNED_SCENE_TYPE) {
+  // Any shop with an owner (owner shops, admin central shops) draws from
+  // its own layout template + theme - owner_user_id as well as
+  // scene_type, so a hand-converted row (see migration 018) can't
+  // silently keep the default floor again.
+  if (shop.scene_type === OWNED_SCENE_TYPE || shop.owner_user_id) {
     const template = getLayoutTemplate(shop.layout_template_id);
     return {
       id: OWNED_SCENE_TYPE,

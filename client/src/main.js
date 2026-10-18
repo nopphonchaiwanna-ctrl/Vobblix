@@ -148,6 +148,31 @@ let activeMainPath = "/lobby";
 let currentGame = null;
 let currentCallTeardown = null;
 let currentShopRoomId = null;
+let currentFloor = null; // { width, height } of the shop floor while in a shop
+
+// The game canvas is a window onto the shop floor, not the whole floor:
+// as big as the space beside the chat sidebar, never bigger than the
+// floor. ShopScene's camera follows the player across the rest - a
+// canvas the size of the whole floor (up to 1300x900) used to run off
+// the bottom of the screen with nothing scrolling to the player.
+// Also sizes the chat sidebar to the same available height.
+const GAME_SIDEBAR_W = 300; // #chat-panels width in style.css
+const GAME_SCREEN_PAD = 16; // #game-screen padding and gap in style.css
+function fitGameViewport() {
+  const availWidth = window.innerWidth - GAME_SIDEBAR_W - GAME_SCREEN_PAD * 3;
+  const availHeight = window.innerHeight - topbar.offsetHeight - GAME_SCREEN_PAD * 2;
+  gameScreen.style.setProperty("--game-avail-h", `${Math.max(availHeight, 320)}px`);
+  return {
+    width: Math.round(Math.min(currentFloor.width, Math.max(availWidth, 320))),
+    height: Math.round(Math.min(currentFloor.height, Math.max(availHeight, 240))),
+  };
+}
+
+window.addEventListener("resize", () => {
+  if (!currentGame || !currentFloor) return;
+  const { width, height } = fitGameViewport();
+  currentGame.scale.resize(width, height);
+});
 // The current shop's DB id (from join-shop's ack), so the topbar's
 // Events menu item knows which shop's events to show - null whenever
 // we're not standing in a shop (see leaveShop()).
@@ -1058,11 +1083,14 @@ function enterShop(roomId) {
     // Floor size and table layout come entirely from the server (see
     // server/src/scenes/) - the client never hardcodes a shop layout, so
     // a new scene/event type on the server needs no client change here.
+    // The canvas is only a window onto that floor (see fitGameViewport).
+    currentFloor = payload.floor;
+    const viewport = fitGameViewport();
     currentGame = new Phaser.Game({
       type: Phaser.AUTO,
       parent: "game",
-      width: payload.floor.width,
-      height: payload.floor.height,
+      width: viewport.width,
+      height: viewport.height,
       backgroundColor: "#1b2634",
       physics: { default: undefined },
     });
@@ -1101,6 +1129,7 @@ function leaveShop() {
   currentCallTeardown?.destroy();
   currentCallTeardown = null;
   currentGame.destroy(true);
+  currentFloor = null;
   currentGame = null;
   currentShopRoomId = null;
   currentShopDbId = null;
