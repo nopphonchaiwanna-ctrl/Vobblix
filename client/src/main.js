@@ -50,6 +50,10 @@ const resetPasswordForm = document.getElementById("reset-password-form");
 const forgotPasswordLink = document.getElementById("forgot-password-link");
 const forgotPasswordCancel = document.getElementById("forgot-password-cancel");
 const resendVerificationBtn = document.getElementById("resend-verification-btn");
+const checkEmailView = document.getElementById("check-email-view");
+const checkEmailAddress = document.getElementById("check-email-address");
+const checkEmailResendBtn = document.getElementById("check-email-resend-btn");
+const checkEmailLoginBtn = document.getElementById("check-email-login-btn");
 
 attachPasswordChecklist(
   document.getElementById("register-password"),
@@ -307,7 +311,7 @@ function returnToLobbyWithError(msg) {
 // One of the four auth-card forms (login/register/forgot-password/
 // reset-password) is visible at a time; the tab row only makes sense
 // above login/register, so it hides itself for the other two.
-const authForms = [loginForm, registerForm, forgotPasswordForm, resetPasswordForm];
+const authForms = [loginForm, registerForm, forgotPasswordForm, resetPasswordForm, checkEmailView];
 function showAuthForm(formToShow) {
   authForms.forEach((form) => {
     form.hidden = form !== formToShow;
@@ -360,6 +364,59 @@ resendVerificationBtn.addEventListener("click", async () => {
   } catch (err) {
     showAuthError(err.message);
   }
+});
+
+// The address shown on /check-email. Kept in sessionStorage too, so a
+// refresh of that page still knows which address to resend to.
+const CHECK_EMAIL_KEY = "vobblix.checkEmail";
+let checkEmail = "";
+
+function rememberCheckEmail(email) {
+  checkEmail = email;
+  try {
+    sessionStorage.setItem(CHECK_EMAIL_KEY, email);
+  } catch {
+    // Storage blocked - the in-memory copy still covers this page view.
+  }
+}
+
+function recallCheckEmail() {
+  if (!checkEmail) {
+    try {
+      checkEmail = sessionStorage.getItem(CHECK_EMAIL_KEY) || "";
+    } catch {
+      checkEmail = "";
+    }
+  }
+  return checkEmail;
+}
+
+// The server rate-limits resends too; this just stops double clicks and
+// tells the player to wait a moment before trying again.
+const RESEND_COOLDOWN_MS = 30_000;
+let resendCooldownTimer = null;
+
+checkEmailResendBtn.addEventListener("click", async () => {
+  const email = recallCheckEmail();
+  checkEmailResendBtn.disabled = true;
+  try {
+    await resendVerification(email);
+    showAuthNotice(`Verification email sent again to ${email}.`);
+    clearTimeout(resendCooldownTimer);
+    resendCooldownTimer = setTimeout(() => (checkEmailResendBtn.disabled = false), RESEND_COOLDOWN_MS);
+  } catch (err) {
+    showAuthError(err.message);
+    checkEmailResendBtn.disabled = false;
+  }
+});
+
+// Handed to the /login route, which resets the form when it runs (later,
+// inside a view transition) and then fills this in.
+let pendingLoginEmail = "";
+
+checkEmailLoginBtn.addEventListener("click", () => {
+  pendingLoginEmail = recallCheckEmail();
+  navigate("/login");
 });
 
 resetPasswordForm.addEventListener("submit", async (e) => {
@@ -860,8 +917,8 @@ registerForm.addEventListener("submit", async (e) => {
     // there's nothing to establishSession() with yet.
     await register({ email, password, displayName });
     registerForm.reset();
-    switchAuthTab("login");
-    showAuthNotice(`Account created! Check ${email} for a verification link, then log in.`);
+    rememberCheckEmail(email);
+    navigate("/check-email");
   } catch (err) {
     showAuthError(err.message);
   }
@@ -1170,6 +1227,35 @@ route("/login", () => {
   switchAuthTab("login");
   loginForm.reset();
   registerForm.reset();
+  if (pendingLoginEmail) {
+    document.getElementById("login-email").value = pendingLoginEmail;
+    pendingLoginEmail = "";
+  }
+});
+
+// Right after registering: "we sent you a link" plus a resend button.
+// Without a remembered address (e.g. opened directly) there's nothing
+// to show, so it falls back to the login screen.
+route("/check-email", () => {
+  if (session) {
+    navigate("/lobby", { replace: true });
+    return;
+  }
+  const email = recallCheckEmail();
+  if (!email) {
+    navigate("/login", { replace: true });
+    return;
+  }
+  document
+    .querySelectorAll("#lobby, #game-screen, #owner-dashboard, #admin-panel, #orders-panel, #order-thread, #settings-panel, #events-panel, #decks-panel")
+    .forEach((s) => (s.hidden = true));
+  topbar.hidden = true;
+  authScreen.hidden = false;
+  authError.hidden = true;
+  authNotice.hidden = true;
+  resendVerificationBtn.hidden = true;
+  checkEmailAddress.textContent = email;
+  showAuthForm(checkEmailView);
 });
 
 // Landed on from the link in a verification email - redeems ?token=...

@@ -74,7 +74,14 @@ authRouter.post("/register", registerLimiter, async (req, res, next) => {
       [cleanEmail, passwordHash, cleanName]
     );
     const user = rows[0];
-    await issueVerificationEmail(user);
+    // The account exists either way; a failed send shouldn't turn into a
+    // 500 that makes the player think registering failed. The client's
+    // "check your email" screen has a resend button for this case.
+    try {
+      await issueVerificationEmail(user);
+    } catch (err) {
+      console.error("[auth] verification email failed:", err.message);
+    }
 
     // Deliberately no token/session here anymore - the account can't
     // log in until the email is verified, so handing back a working

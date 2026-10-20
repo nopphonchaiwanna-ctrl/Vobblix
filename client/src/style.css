@@ -219,6 +219,16 @@ button:disabled {
   font-size: 13px;
 }
 
+.check-email-title {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+#check-email-view .subtitle strong {
+  color: var(--text);
+  word-break: break-all;
+}
+
 /* A button that should read as a text link (Forgot password?, Resend
    verification email, Back to log in) rather than a boxed action -
    sits inline under the auth forms without competing with the actual
@@ -269,7 +279,8 @@ button:disabled {
   color: var(--accent-contrast);
 }
 
-.auth-form button[type="submit"] {
+.auth-form button[type="submit"],
+#check-email-resend-btn {
   width: 100%;
   margin-top: 4px;
 }

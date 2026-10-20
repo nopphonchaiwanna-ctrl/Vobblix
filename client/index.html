@@ -284,6 +284,20 @@
           <button type="submit">Create account</button>
         </form>
 
+        <!-- /check-email: shown right after registering, until the
+             player clicks the link in the verification email - see
+             main.js's route handler. -->
+        <div id="check-email-view" class="auth-form" hidden>
+          <h2 class="check-email-title">Verify your email</h2>
+          <p class="subtitle">
+            We sent a verification link to <strong id="check-email-address"></strong>.
+            Click it to activate your account, then log in.
+          </p>
+          <p class="hint">Can't find it? Check your spam or promotions folder, or send it again.</p>
+          <button type="button" id="check-email-resend-btn">Resend email</button>
+          <button type="button" id="check-email-login-btn" class="link-button">Back to log in</button>
+        </div>
+
         <!-- Shown instead of the login/register tabs when the user
              clicks "Forgot password?" - see main.js. A plain email-only
              form; the server always responds success either way so

@@ -1,44 +1,71 @@
-// Sends transactional email (account verification, password reset)
-// over SMTP. Deliberately provider-agnostic - fill in SMTP_HOST/PORT/
-// USER/PASS in .env and any SMTP-speaking provider works (Resend,
-// SendGrid, Mailtrap for local testing, a personal Gmail account with
-// an app password, ...). See README's "Planned: mandatory email
-// verification..." section for why a Thailand-local provider isn't
-// relevant here - this is plain SMTP, not the SMS-OTP cost comparison
-// that applies to the phone-verification idea.
+// Sends transactional email (account verification, password reset).
+// Two transports, first one configured wins:
+//   1. Brevo's HTTP API (BREVO_API_KEY + EMAIL_FROM) - for hosting that
+//      blocks outbound SMTP ports, e.g. Render's free plan. The sender
+//      address must be verified in Brevo (Senders & IP); a plain Gmail
+//      address works, no domain needed.
+//   2. SMTP (SMTP_HOST/PORT/USER/PASS) - any SMTP provider, e.g. a Gmail
+//      account with an app password for local development.
 //
-// If SMTP isn't configured at all, sendEmail() logs the message to the
+// If neither is configured, sendEmail() logs the message to the
 // console instead of sending it - so register/login/forgot-password
 // can be exercised locally (reading the token out of the server log)
 // without needing a real mailbox wired up first.
 
 import nodemailer from "nodemailer";
 
-const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, EMAIL_FROM } = process.env;
+const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, EMAIL_FROM, BREVO_API_KEY } = process.env;
 
-const configured = Boolean(SMTP_HOST && SMTP_USER && SMTP_PASS);
+const brevoConfigured = Boolean(BREVO_API_KEY && EMAIL_FROM);
+const smtpConfigured = Boolean(SMTP_HOST && SMTP_USER && SMTP_PASS);
 
-if (!configured) {
+if (BREVO_API_KEY && !EMAIL_FROM) {
+  console.warn("[email] BREVO_API_KEY is set but EMAIL_FROM isn't - Brevo needs a verified sender address.");
+}
+if (!brevoConfigured && !smtpConfigured) {
   console.warn(
-    "[email] SMTP_HOST/SMTP_USER/SMTP_PASS not set - verification/reset " +
-      "emails will be logged to the console instead of actually sent. " +
-      "See server/.env.example."
+    "[email] Neither BREVO_API_KEY nor SMTP_HOST/SMTP_USER/SMTP_PASS is set - " +
+      "verification/reset emails will be logged to the console instead of " +
+      "actually sent. See server/.env.example."
   );
 }
 
-const transporter = configured
-  ? nodemailer.createTransport({
-      host: SMTP_HOST,
-      port: Number(SMTP_PORT) || 587,
-      secure: Number(SMTP_PORT) === 465,
-      auth: { user: SMTP_USER, pass: SMTP_PASS },
-    })
-  : null;
+const transporter =
+  !brevoConfigured && smtpConfigured
+    ? nodemailer.createTransport({
+        host: SMTP_HOST,
+        port: Number(SMTP_PORT) || 587,
+        secure: Number(SMTP_PORT) === 465,
+        auth: { user: SMTP_USER, pass: SMTP_PASS },
+      })
+    : null;
+
+// "VobbLiX <me@gmail.com>" or a bare address -> Brevo's { name, email }.
+function parseFrom(from) {
+  const match = /^\s*(.*?)\s*<([^>]+)>\s*$/.exec(from);
+  return match ? { name: match[1].replace(/^"|"$/g, "") || "VobbLiX", email: match[2] } : { name: "VobbLiX", email: from.trim() };
+}
+
+async function sendViaBrevo({ to, subject, html, text }) {
+  const res = await fetch("https://api.brevo.com/v3/smtp/email", {
+    method: "POST",
+    headers: { "api-key": BREVO_API_KEY, "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify({ sender: parseFrom(EMAIL_FROM), to: [{ email: to }], subject, htmlContent: html, textContent: text }),
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!res.ok) {
+    throw new Error(`Brevo HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  }
+}
 
 export async function sendEmail({ to, subject, html, text }) {
+  if (brevoConfigured) {
+    await sendViaBrevo({ to, subject, html, text });
+    return;
+  }
   if (!transporter) {
     console.log(
-      `[email] (SMTP not configured, not actually sent)\n` +
+      `[email] (email not configured, not actually sent)\n` +
         `  To: ${to}\n  Subject: ${subject}\n  ${text || html}`
     );
     return;

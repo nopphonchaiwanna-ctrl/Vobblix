@@ -8,7 +8,7 @@
 | server (Express + Socket.io) | Render (region Singapore) | ฟรี: หลับเมื่อว่าง 15 นาที ตื่นช้า ~30–60 วินาที |
 | database | Neon (branch หลัก ใช้ร่วมกับเครื่อง dev) | ฟรี |
 | TURN (voice/video) | Cloudflare Realtime TURN | ฟรี 1,000 GB/เดือน แล้ว $0.05/GB |
-| อีเมล | Gmail SMTP (ค่าเดิมใน `server/.env`) | ฟรี ประมาณ 500 ฉบับ/วัน |
+| อีเมล | Brevo HTTP API (Render แผนฟรีบล็อกพอร์ต SMTP ส่ง Gmail SMTP ตรง ๆ ไม่ได้) | ฟรี 300 ฉบับ/วัน |
 
 Deploy อัตโนมัติทุกครั้งที่ push ขึ้น branch **`dev`**
 
@@ -40,7 +40,9 @@ git push origin dev
 |---|---|
 | `DATABASE_URL` | ค่าเดียวกับใน `server/.env` (ขั้นที่ 1) |
 | `CLIENT_URL` | ใส่ `https://example.com` ไปก่อน จะกลับมาแก้ในขั้นที่ 5 |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM` | ก๊อปค่าเดียวกับใน `server/.env` (Gmail) |
+| `BREVO_API_KEY` | API key จาก Brevo (ดูหัวข้อ "อีเมล: Brevo" ข้างล่าง) |
+| `EMAIL_FROM` | อีเมลผู้ส่งที่ยืนยันใน Brevo แล้ว เช่น `VobbLiX <you@gmail.com>` |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` | เว้นว่างได้ (ใช้ในเครื่องเท่านั้น) |
 | `GEMINI_API_KEY` | ค่าเดียวกับใน `server/.env` |
 | `CLOUDFLARE_TURN_KEY_ID`, `CLOUDFLARE_TURN_API_TOKEN` | เว้นว่างไปก่อน จะใส่ในขั้นที่ 6 |
 
@@ -49,7 +51,20 @@ git push origin dev
 4. กด **Apply** แล้วรอ build เสร็จ จะได้ URL แบบ `https://vobblix-dev.onrender.com`
 5. เปิด `https://<URL ของ Render>/health` ต้องเห็น `{"ok":true}`
 
+> ถ้า deploy ไม่ผ่านพร้อมข้อความ `DATABASE_URL is not set` แปลว่ายังไม่ได้ใส่ `DATABASE_URL` ใน Render → **Environment** ให้ใส่แล้วกด **Manual Deploy**
+
 > ถ้า deploy ไม่ผ่านพร้อมข้อความ `Set CORS_ORIGINS (or CLIENT_URL) in production` แปลว่า `CLIENT_URL` ว่างอยู่ ให้ใส่ค่าชั่วคราวไปก่อน
+
+### อีเมล: Brevo
+
+Render แผนฟรีบล็อกการส่งอีเมลผ่านพอร์ต SMTP (25, 465, 587) ถ้าใช้ Gmail SMTP แบบในเครื่อง อีเมลจะส่งไม่ออก จึงใช้ Brevo ซึ่งส่งผ่าน HTTPS แทน
+
+1. สมัคร [brevo.com](https://www.brevo.com) แผน Free
+2. **Senders, Domains & Dedicated IPs** → **Senders** → **Add a sender** ใส่ Gmail ของตัวเอง แล้วกดยืนยันจากอีเมลที่ Brevo ส่งมา
+3. **SMTP & API** → แท็บ **API Keys** → **Generate a new API key** (ก๊อปเก็บไว้ จะเห็นครั้งเดียว)
+4. Render → Environment → ใส่ `BREVO_API_KEY` และ `EMAIL_FROM` เป็นอีเมลที่ยืนยันในข้อ 2 → Save
+
+ถ้าส่งไม่ได้ ดู log ใน Render หาบรรทัด `[auth] verification email failed:` หรือ `Brevo HTTP ...`
 
 ## 4. Cloudflare Pages: client
 
