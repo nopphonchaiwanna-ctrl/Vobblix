@@ -34,6 +34,23 @@ export const DEFAULT_SCENE_ID = defaultScene.id;
 // the static SCENES above.
 export const OWNED_SCENE_TYPE = "owned";
 
+// Every shop floor gets an extra strip along its top wall for the
+// counter (listings) and the events board, so they never crowd a table
+// an owner already laid out - tables keep their spacing, just shifted
+// down by the strip. Players spawn in the strip, by the entrance.
+export const FRONT_STRIP_H = 200;
+
+function withShopFixtures(scene) {
+  return {
+    ...scene,
+    FLOOR_HEIGHT: scene.FLOOR_HEIGHT + FRONT_STRIP_H,
+    TABLES: scene.TABLES.map((t) => ({ ...t, y: t.y + FRONT_STRIP_H })),
+    COUNTER: { x: Math.round(scene.FLOOR_WIDTH * 0.25), y: 100, radius: 110 },
+    BOARD: { x: Math.round(scene.FLOOR_WIDTH * 0.75), y: 70, radius: 110 },
+    SPAWN: { x: scene.FLOOR_WIDTH / 2, y: 120 },
+  };
+}
+
 export function getScene(sceneType) {
   return SCENES[sceneType] || SCENES[DEFAULT_SCENE_ID];
 }
@@ -53,7 +70,7 @@ export function resolveScene(shop) {
   // silently keep the default floor again.
   if (shop.scene_type === OWNED_SCENE_TYPE || shop.owner_user_id) {
     const template = getLayoutTemplate(shop.layout_template_id);
-    return {
+    return withShopFixtures({
       id: OWNED_SCENE_TYPE,
       label: shop.name,
       FLOOR_WIDTH: template.FLOOR_WIDTH,
@@ -66,10 +83,10 @@ export function resolveScene(shop) {
       // client today, but already flowing through end-to-end so that
       // feature doesn't need another payload-shape change.
       assets: shop.assets || {},
-    };
+    });
   }
   const scene = getScene(shop.scene_type);
-  return { ...scene, theme: DEFAULT_THEME_ID, assets: {} };
+  return withShopFixtures({ ...scene, theme: DEFAULT_THEME_ID, assets: {} });
 }
 
 export function tableById(sceneType, tableId) {

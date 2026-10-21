@@ -246,8 +246,8 @@ io.on("connection", (socket) => {
       const scene = resolveScene(shop);
 
       const spawn = {
-        x: scene.FLOOR_WIDTH / 2 + (Math.random() * 60 - 30),
-        y: scene.FLOOR_HEIGHT / 2 + (Math.random() * 60 - 30),
+        x: scene.SPAWN.x + (Math.random() * 60 - 30),
+        y: scene.SPAWN.y + (Math.random() * 60 - 30),
       };
 
       const player = addPlayer(
@@ -279,6 +279,8 @@ io.on("connection", (socket) => {
         sceneType: scene.id,
         floor: { width: scene.FLOOR_WIDTH, height: scene.FLOOR_HEIGHT },
         tables: scene.TABLES,
+        counter: scene.COUNTER,
+        board: scene.BOARD,
         theme: scene.theme,
         isOwnedShop: !!shop.owner_user_id,
         shopDbId: shop.id,
