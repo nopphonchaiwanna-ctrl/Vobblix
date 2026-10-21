@@ -7,12 +7,19 @@
 
 import { escapeHtml } from "./format.js";
 import { icon } from "./icons.js";
+import { pickBigTile } from "./bigScreen.js";
+import { strings } from "../scene3d/strings.js";
 
 function el(id) {
   return document.getElementById(id);
 }
 
 export function initCallUI() {
+  const bigEmptyEl = el("call-big-empty");
+  bigEmptyEl.textContent = strings.noCamera;
+  // The tile the player clicked to keep on the big screen, if any - see
+  // refreshBig() and ui/bigScreen.js's pickBigTile().
+  let pinnedId = null;
   const panel = el("call-panel");
   const joinBtn = el("call-join-btn");
   const muteBtn = el("call-mute-btn");
@@ -150,6 +157,29 @@ export function initCallUI() {
     }
   });
 
+  // Seated "C1" layout: one tile fills the big screen (CSS grid places
+  // .is-big; the <video> elements never move, so streams keep playing
+  // through every swap), the rest line up in the strip beside it.
+  function refreshBig() {
+    const tiles = [...tilesEl.querySelectorAll(".call-tile")].map((t) => ({
+      id: t.dataset.peer,
+      isLocal: t.dataset.peer === "local",
+      videoOn: t.classList.contains("has-video") || t.classList.contains("video-pending"),
+    }));
+    const bigId = pickBigTile(tiles, pinnedId);
+    for (const t of tilesEl.querySelectorAll(".call-tile")) {
+      t.classList.toggle("is-big", t.dataset.peer === bigId);
+      t.classList.toggle("is-pinned", t.dataset.peer === pinnedId);
+    }
+    bigEmptyEl.hidden = tiles.some((t) => t.videoOn);
+  }
+
+  tilesEl.addEventListener("click", (e) => {
+    const tile = e.target.closest(".call-tile");
+    if (!tile) return;
+    api.setPinned(tile.classList.contains("is-big") && pinnedId ? null : tile.dataset.peer);
+  });
+
   function tileFor(peerId) {
     let tile = tilesEl.querySelector(`[data-peer="${peerId}"]`);
     if (!tile) {
@@ -166,6 +196,7 @@ export function initCallUI() {
         '<div class="call-tile-name"></div>';
       tilesEl.appendChild(tile);
       applySinkId(tile.querySelector("video"));
+      refreshBig();
       // A freshly-created remote tile should start muted if we're
       // currently deafened ourselves - otherwise a peer who joins after
       // we deafened would briefly play audio before the next toggle.
@@ -179,6 +210,12 @@ export function initCallUI() {
   const api = {
     setHandlers(next) {
       handlers = { ...handlers, ...next };
+    },
+
+    /** Keeps `peerId`'s tile on the big screen (null = back to automatic). */
+    setPinned(peerId) {
+      pinnedId = peerId;
+      refreshBig();
     },
 
     // Shows/hides the whole panel depending on whether the player is
@@ -255,6 +292,7 @@ export function initCallUI() {
       videoEl.muted = true; // never echo your own mic back to yourself
       videoEl.srcObject = hasVideo ? stream : null;
       tile.classList.toggle("has-video", hasVideo);
+      refreshBig();
     },
 
     addPeer({ id, name }) {
@@ -264,6 +302,8 @@ export function initCallUI() {
 
     removePeer(id) {
       tilesEl.querySelector(`[data-peer="${id}"]`)?.remove();
+      if (pinnedId === id) pinnedId = null;
+      refreshBig();
     },
 
     setPeerStream(id, stream) {
@@ -274,6 +314,7 @@ export function initCallUI() {
       // currently has a video track - no separate <audio> element needed.
       if (id !== "local") videoEl.muted = deafenedLocally;
       tile.classList.toggle("has-video", !!stream?.getVideoTracks().length);
+      refreshBig();
     },
 
     setPeerVideoState(id, videoOn) {
@@ -282,6 +323,11 @@ export function initCallUI() {
       // yet" - distinct from "has-video" so the UI can show a brief
       // "connecting" state instead of just the mic icon.
       tile.classList.toggle("video-pending", videoOn && !tile.classList.contains("has-video"));
+      // Camera turned off: the stream keeps its (now ended) track until
+      // renegotiation, so drop has-video here rather than keep a frozen
+      // frame on the big screen.
+      if (!videoOn) tile.classList.remove("has-video");
+      refreshBig();
     },
 
     setPeerMicMuted(id, muted) {
@@ -315,6 +361,8 @@ export function initCallUI() {
 
     clearTiles() {
       tilesEl.innerHTML = "";
+      pinnedId = null;
+      refreshBig();
     },
 
     reset() {

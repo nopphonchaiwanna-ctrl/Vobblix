@@ -1303,11 +1303,10 @@
         </section>
 
         <!-- Voice/video call for whoever's currently at the same table -
-             hidden unless seated (see ShopScene's updateTableProximity /
-             main.js's setupCall). Joining is always an explicit button
-             press, never automatic, since getUserMedia needs a user
-             gesture and the mic/camera permission prompt shouldn't
-             surprise anyone just for walking near a table. -->
+             hidden unless seated (see main.js's setupCall). Pressing
+             "Join table" joins it (mic on, camera off); while seated
+             (body.seated) this panel becomes the big-screen "C1" view
+             over the 3D table - see ui/call.js / ui/bigScreen.js. -->
         <section class="chat-panel" id="call-panel" hidden>
           <header>
             <span class="icon"><svg
@@ -1344,6 +1343,7 @@
 </svg></span></button>
           </header>
           <div class="call-tiles" id="call-tiles"></div>
+          <p class="call-big-empty" id="call-big-empty" hidden></p>
           <div class="call-controls">
             <button type="button" id="call-join-btn" data-state="idle"><span class="icon"><svg
   class="lucide lucide-mic"
