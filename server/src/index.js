@@ -249,6 +249,15 @@ io.on("connection", (socket) => {
 
       const scene = resolveScene(shop);
 
+      // The socket outlives a shop visit (the client keeps it across
+      // lobby <-> shop), so re-read the look here - a character or photo
+      // changed in Settings since connecting shows on this very join.
+      try {
+        Object.assign(socket.user, await getAvatarProfile(socket.user.userId));
+      } catch {
+        // keep whatever the handshake loaded
+      }
+
       const spawn = {
         x: scene.SPAWN.x + (Math.random() * 60 - 30),
         y: scene.SPAWN.y + (Math.random() * 60 - 30),

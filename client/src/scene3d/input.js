@@ -13,6 +13,16 @@ const KEY_DIRS = {
   ArrowRight: [1, 0], KeyD: [1, 0],
 };
 
+/**
+ * Whether the shop's own keys (walking, E/Enter to interact) should act
+ * right now: not while a panel is open over the shop (Settings, Orders,
+ * ...), the ⊞ menu is open, or a dialog is up - those keys belong to
+ * whatever the player is looking at. `doc` is a parameter for tests.
+ */
+export function shopKeysActive(doc = document) {
+  return !doc.querySelector(".over-shop:not([hidden]), #hud-menu:not([hidden]), dialog[open]");
+}
+
 export function isTextInputFocused() {
   const el = document.activeElement;
   return !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable);
@@ -90,7 +100,7 @@ export function createInput() {
   let analog = { x: 0, y: 0 };
 
   const onKeyDown = (e) => {
-    if (!(e.code in KEY_DIRS) || isTextInputFocused() || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (!(e.code in KEY_DIRS) || isTextInputFocused() || !shopKeysActive() || e.metaKey || e.ctrlKey || e.altKey) return;
     e.preventDefault();
     held.add(e.code);
   };

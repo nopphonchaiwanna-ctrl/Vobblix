@@ -19,6 +19,7 @@ import { nearestInteractable } from "./interactables.js";
 import { resolveCharacter } from "./characters.js";
 import { paletteFor } from "./themes.js";
 import { strings } from "./strings.js";
+import { emitWithTimeout } from "./ackTimeout.js";
 
 const MOVE_EMIT_INTERVAL = 50; // ms between "move" events sent to server
 const REMOTE_LERP = 0.25; // per-frame smoothing for remote player positions
@@ -55,6 +56,10 @@ export default class ShopWorld {
     this.disposables = [];
     this.destroyed = false;
 
+    // Chat doesn't need WebGL - wire it first so a browser that can't
+    // draw the shop can still talk in it (see createRenderer's fallback).
+    this.wireSocketEvents();
+    this.wireChat();
     if (!this.createRenderer()) return;
 
     this.scene = new THREE.Scene();
@@ -75,8 +80,6 @@ export default class ShopWorld {
     for (const p of opts.players || []) this.addRemotePlayer(p);
 
     this.rig.snapTo(this.pos.x, this.pos.y);
-    this.wireSocketEvents();
-    this.wireChat();
 
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(this.container);
@@ -237,7 +240,7 @@ export default class ShopWorld {
   }
 
   addRemotePlayer(p) {
-    if (this.remotePlayers.has(p.id) || this.destroyed) return;
+    if (this.remotePlayers.has(p.id) || this.destroyed || !this.scene) return;
     const avatar = this.addAvatar(p);
     avatar.setFloorPosition(p.x, p.y);
     avatar.setAtTable(!!p.tableId);
@@ -309,30 +312,37 @@ export default class ShopWorld {
    * movement locked, camera moved in over the table, body.seated set.
    * Resolves {ok:false, reason} without changing anything if refused.
    */
-  joinTable(tableId) {
+  async joinTable(tableId) {
     const table = this.tables.find((t) => t.id === tableId);
-    if (!table || this.currentTableId) return Promise.resolve({ ok: false, reason: "unknown" });
-    return new Promise((resolve) => {
-      // join-table ignores unknown tables without acking - don't hang.
-      const timer = setTimeout(() => resolve({ ok: false, reason: "timeout" }), 5000);
-      this.socket.emit("join-table", { tableId }, (payload) => {
-        clearTimeout(timer);
-        if (this.destroyed) return resolve({ ok: false, reason: "gone" });
-        if (payload?.error) return resolve({ ok: false, reason: payload.error });
-        this.currentTableId = tableId;
-        this.setMovementLocked(true);
-        this.chatUI.clearTableLog();
-        this.chatUI.setSeatedAt(table.label);
-        for (const msg of payload?.history || []) {
-          this.chatUI.appendTableMessage({ from: msg.author_name, text: msg.text, authorId: msg.user_id });
-        }
-        this.callHooks?.onTableChanged(table.label);
-        this.rig.toSeated(table, { instant: prefersReducedMotion() });
-        document.body.classList.add("seated");
-        this.updateNear();
-        resolve({ ok: true, table });
-      });
-    });
+    if (!table || this.currentTableId) return { ok: false, reason: "unknown" };
+    if (this.joining) return { ok: false, reason: "busy" }; // a second E/tap while the first is in flight
+    this.joining = true;
+    // join-table ignores unknown tables without acking - don't hang; and
+    // if the server seats us after we gave up, stand straight back up
+    // rather than be at a table the UI doesn't show.
+    const { timedOut, payload } = await emitWithTimeout(
+      (ack) => this.socket.emit("join-table", { tableId }, ack),
+      5000,
+      (late) => {
+        if (!late?.error && !this.destroyed && this.currentTableId !== tableId) this.socket.emit("leave-table");
+      }
+    );
+    this.joining = false;
+    if (timedOut) return { ok: false, reason: "timeout" };
+    if (this.destroyed) return { ok: false, reason: "gone" };
+    if (payload?.error) return { ok: false, reason: payload.error };
+    this.currentTableId = tableId;
+    this.setMovementLocked(true);
+    this.chatUI.clearTableLog();
+    this.chatUI.setSeatedAt(table.label);
+    for (const msg of payload?.history || []) {
+      this.chatUI.appendTableMessage({ from: msg.author_name, text: msg.text, authorId: msg.user_id });
+    }
+    this.callHooks?.onTableChanged(table.label);
+    this.rig.toSeated(table, { instant: prefersReducedMotion() });
+    document.body.classList.add("seated");
+    this.updateNear();
+    return { ok: true, table };
   }
 
   /** Gets up from the current table (ends the call too) and walks again. */
@@ -351,6 +361,11 @@ export default class ShopWorld {
   /** Thumbstick input from the mobile HUD, floor-space vector of length <= 1. */
   setAnalogInput(vec) {
     this.input?.setAnalog(vec);
+  }
+
+  /** False when the browser couldn't create a WebGL context (chat-only mode). */
+  get hasScene() {
+    return !!this.renderer;
   }
 
   resize() {

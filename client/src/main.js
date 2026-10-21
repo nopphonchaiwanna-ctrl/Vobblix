@@ -4,7 +4,7 @@ import { initCallUI } from "./ui/call.js";
 import { createCallManager } from "./webrtc/callManager.js";
 import ShopWorld from "./scene3d/ShopWorld.js";
 import { strings } from "./scene3d/strings.js";
-import { isTextInputFocused, attachJoystick } from "./scene3d/input.js";
+import { isTextInputFocused, attachJoystick, shopKeysActive } from "./scene3d/input.js";
 import { initHud } from "./ui/hud.js";
 import { listNotifications, markNotificationsRead, getIceServers } from "./net/api.js";
 import { login, register, me, applyForOwner, myApplication, publicShops, myShop, blockUser, unblockUser, listBlockedUsers, verifyEmail, resendVerification, forgotPassword, resetPassword } from "./net/api.js";
@@ -1150,6 +1150,7 @@ function enterShop(roomId) {
       callHooks: currentCallTeardown,
     });
     currentWorld.onNearChange(showInteractPrompt);
+    if (!currentWorld.hasScene) setShopChatOpen(true); // chat-only mode: show the one thing that works
     detachJoystick = attachJoystick(joystickEl, joystickEl.firstElementChild, (v) => currentWorld?.setAnalogInput(v));
   });
 }
@@ -1261,7 +1262,11 @@ hud = initHud({
 });
 chatUI.onShopUnreadChange((n) => hud.setShopUnread(n));
 window.addEventListener("keydown", (e) => {
-  if (!currentWorld || gameScreen.hidden || isTextInputFocused() || e.repeat) return;
+  if (!currentWorld || gameScreen.hidden || isTextInputFocused() || !shopKeysActive() || e.repeat) return;
+  // Enter only means "interact" when nothing else has focus - on a
+  // focused button it must press that button.
+  const focus = document.activeElement;
+  if (e.code === "Enter" && !(focus === document.body || focus === interactBtn)) return;
   if (e.code === "KeyE" || e.code === "Enter") {
     if (!interactPrompt.hidden) {
       e.preventDefault();

@@ -2,7 +2,7 @@
 // planned Thai/English i18n (see CLAUDE.md) has a single file to pick up.
 
 export const strings = {
-  noWebgl: "Your browser can't show the 3D shop (WebGL is off or unsupported). Chat still works on the right.",
+  noWebgl: "Your browser can't show the 3D shop (WebGL is off or unsupported). You can still chat with everyone here.",
   loading: "Setting up the shop...",
   joinTable: "Join table",
   leaveTable: "Leave table",
