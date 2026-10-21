@@ -3383,3 +3383,31 @@ button.small {
     justify-content: flex-start;
   }
 }
+
+.history-chevron {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.history-event[open] .history-chevron {
+  transform: rotate(180deg);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .history-chevron {
+    transition: transform 160ms ease-out;
+  }
+}
+
+@media (max-width: 480px) {
+  .history-event > summary {
+    position: relative;
+    padding-right: 40px;
+  }
+
+  .history-chevron {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+  }
+}

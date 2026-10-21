@@ -191,6 +191,7 @@ const matchHistory = initMatchHistory({
   getToken,
   onBack: returnToMainScreen,
   openEvent: (eventId) => navigate(`/events/${eventId}`),
+  findEvents: () => navigate("/lobby"),
 });
 const lobbyEvents = initLobbyEvents({
   container: document.getElementById("lobby-events"),

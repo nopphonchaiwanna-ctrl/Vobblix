@@ -5,6 +5,7 @@
 
 import { getMatchHistory } from "../net/api.js";
 import { escapeHtml } from "./format.js";
+import { icon } from "./icons.js";
 import { initDashboardNav } from "./dashboardNav.js";
 import { showPanelScreen } from "./screens.js";
 import { GAME_LABELS, REGION_LABELS, REGULATION_LABELS, PENALTY_LABELS } from "./events/common.js";
@@ -56,6 +57,7 @@ function eventHtml(e) {
           <span class="status-pill${placedCleanly(e) ? " confirmed" : ""}">${escapeHtml(placementText(e))}</span>
           <span class="status-pill">${escapeHtml(recordText(e.record))}</span>
         </span>
+        ${icon("chevron-down", "history-chevron")}
       </summary>
       <div class="history-detail">
         <ol class="history-matches">${matches}</ol>
@@ -65,7 +67,7 @@ function eventHtml(e) {
     </details>`;
 }
 
-export function initMatchHistory({ getToken, onBack, openEvent }) {
+export function initMatchHistory({ getToken, onBack, openEvent, findEvents }) {
   const screen = el("history-panel");
   const errorEl = el("history-panel-error");
   const bodyEl = el("history-panel-body");
@@ -96,7 +98,7 @@ export function initMatchHistory({ getToken, onBack, openEvent }) {
     else if (target.hasAttribute("data-retry")) render();
     else if (target.hasAttribute("data-find-events")) {
       screen.hidden = true;
-      onBack?.();
+      findEvents();
     }
   });
 
