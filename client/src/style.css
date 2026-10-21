@@ -3196,3 +3196,74 @@ button.small {
     justify-content: flex-start;
   }
 }
+
+/* Lobby "Events" card (ui/lobbyEvents.js). Kept plain on purpose - the
+   lobby gets a full redesign later. */
+.lobby-events-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.lobby-events-search {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
+.lobby-events-when {
+  display: flex;
+  gap: 4px;
+}
+
+.lobby-events-when button[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--accent-contrast);
+  border-color: var(--accent);
+}
+
+.lobby-event-row {
+  width: 100%;
+  text-align: left;
+  color: var(--text);
+  font: inherit;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.lobby-event-row:hover,
+.lobby-event-row:focus-visible {
+  border-color: var(--accent);
+}
+
+.lobby-event-row .row-title,
+.lobby-event-row .row-meta {
+  display: block;
+}
+
+.lobby-event-badges {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.status-pill.lobby-status-open,
+.status-pill.lobby-status-live {
+  background: var(--success);
+  color: var(--success-contrast);
+}
+
+@media (max-width: 480px) {
+  .lobby-event-row {
+    flex-wrap: wrap;
+  }
+
+  .lobby-event-badges {
+    flex-direction: row;
+    width: 100%;
+    justify-content: flex-start;
+  }
+}

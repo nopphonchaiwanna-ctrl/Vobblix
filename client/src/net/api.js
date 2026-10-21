@@ -264,6 +264,13 @@ export function listEventsByShop(token, shopId) {
   return request(`/events/by-shop/${shopId}`, { token });
 }
 
+/** The lobby's list: { events } across published shops. Empty filters are left out. */
+export function upcomingEvents(token, { q = "", game = "", when = "" } = {}) {
+  const params = new URLSearchParams(Object.entries({ q, game, when }).filter(([, v]) => v));
+  const qs = params.toString();
+  return request(`/events/upcoming${qs ? `?${qs}` : ""}`, { token });
+}
+
 export function getEvent(token, eventId) {
   return request(`/events/${eventId}`, { token });
 }

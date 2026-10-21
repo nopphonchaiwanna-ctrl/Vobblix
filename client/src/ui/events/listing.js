@@ -29,3 +29,17 @@ export function fromLocalInputValue(value) {
   const d = new Date(value); // no zone suffix = local time
   return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
+
+/** The viewer's own place in an event, for the lobby row - or null. */
+export function entryBadge(myEntry) {
+  if (!myEntry) return null;
+  if (myEntry.entryStatus === "pending_draw") return "Entered draw";
+  if (myEntry.entryStatus === "waitlisted") return `Waitlist #${myEntry.waitlistPosition}`;
+  return "Registered";
+}
+
+export function statusBadge(event) {
+  if (event.status === "swiss" || event.status === "bracket") return "Live";
+  if (event.registrationOpen === false) return "Closed";
+  return event.status === "check_in" ? "Check-in" : "Open";
+}

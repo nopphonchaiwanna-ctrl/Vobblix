@@ -18,6 +18,7 @@ import { initAdminPanel } from "./ui/adminPanel.js";
 import { initShopListings } from "./ui/shopListings.js";
 import { initSettingsPanel } from "./ui/settings.js";
 import { initEventsPanel } from "./ui/eventsPanel.js";
+import { initLobbyEvents } from "./ui/lobbyEvents.js";
 import { initDecksPanel } from "./ui/decksPanel.js";
 import { route, setNotFound, navigate, startRouter } from "./router.js";
 import { showToast } from "./ui/toast.js";
@@ -184,6 +185,11 @@ const ordersPanel = initOrdersPanel({
 });
 const eventsPanel = initEventsPanel({ getToken, getUserId, onBack: returnToMainScreen, goToMatch, watchTable });
 const decksPanel = initDecksPanel({ getToken, onBack: returnToMainScreen });
+const lobbyEvents = initLobbyEvents({
+  container: document.getElementById("lobby-events"),
+  getToken,
+  openEvent: (id) => navigate(`/events/${encodeURIComponent(id)}`),
+});
 const ownerDashboard = initOwnerDashboard({
   getToken,
   onBack: () => {
@@ -505,6 +511,7 @@ publishedShopsList.addEventListener("click", (e) => {
 // (submitting an application, an owner-dashboard edit, coming back from
 // a panel).
 async function refreshLobbyExtras() {
+  lobbyEvents.refresh(); // renders its own loading/error state
   applyOwnerBtn.hidden = true;
   ownerStatusHint.hidden = true;
 

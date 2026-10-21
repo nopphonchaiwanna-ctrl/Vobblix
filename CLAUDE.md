@@ -105,14 +105,16 @@ deploy (code side ready: `render.yaml`, TURN via
 `services/iceServers.js`, 720p video; the user follows `docs/deploy.md`
 for the Render / Cloudflare Pages / Neon `production` branch accounts),
 6. Thai/English i18n.
-1. Neon is at migration 018 - **019 (users.avatar_config) and 020
+1. Neon is at migration 018 - **019 (users.avatar_config), 020
    (event day: entry modes, check-in, tables, judges, penalties, push)
-   must run before the new server** (Render runs `npm run migrate` on
+   and 021 (events.starts_at) must run before the new server** (Render runs `npm run migrate` on
    start). Web Push needs `VAPID_*` env vars (docs/deploy.md 6.5).
-   Event work is split in 4 parts: 1 event day = done; next 2 lobby
-   dashboard to find events + search, 3 player match history,
+   Event work is split in 4 parts: 1 event day = done; 2 lobby events
+   list + search + start times + all-online match tables = done; next
+   3 player match history,
    4 deck submission + Vanguard deck stats by G3 ride line (per event:
-   shop owner; across events: admin only).
+   shop owner; across events: admin only). Part 4 must not depend on
+   Decklog for TH-format Vanguard events - there's no TH Decklog.
    (017: users.deleted_at, deletion-request
    processing columns, the `default` room row; 018: owned shops get
    scene_type 'owned' so 111/222 draw their chosen layout/theme).

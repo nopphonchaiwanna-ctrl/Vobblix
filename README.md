@@ -526,8 +526,16 @@ npm run dev:client
 
 A shop's owner (or an admin) organizes events: Swiss rounds with an
 optional top-cut bracket (`server/src/tournament/swiss.js`, `bracket.js`).
-The event day flow (design: `docs/superpowers/specs/2026-10-21-event-day-design.md`):
+The event day flow (design: `docs/superpowers/specs/2026-10-21-event-day-design.md`,
+plus `2026-10-22-lobby-events-design.md` for start times, online tables
+and the lobby list):
 
+0. **Start time** - every new event has a start date/time
+   (`tournament_events.starts_at`, migration 021). Once it passes, nobody
+   new can register or join the waitlist (`tournament/schedule.js`); the
+   status doesn't change - the organizer still opens check-in and starts
+   the event. Moving the time later reopens registration. Older events
+   with no start time never close on their own.
 1. **Registration** - first come (then a waitlist), or a **lottery** the
    organizer runs (`tournament/entry.js`). Vanguard events also set the
    card pool (TH / JP) and regulation (Premium / D-Standard). A drop
@@ -536,10 +544,11 @@ The event day flow (design: `docs/superpowers/specs/2026-10-21-event-day-design.
    organizer approves them, or presses **auto check-in** to approve
    everyone standing in the shop's 3D room right now. Start pairs only
    approved players; no-show spots go to approved waitlisters in order.
-3. **Rounds** - every match gets a table number (`tournament/tables.js`):
-   the shop's real tables for the top pairs, **online tables** (a call
-   with no spot on the floor, id `event:<eventId>:t<n>`) after that.
-   "Go to table" walks the player there and joins the call. While a
+3. **Rounds** - every match gets a table number (`tournament/tables.js`),
+   top pairs first, and plays at an **online table** (a call with no spot
+   on the floor, id `event:<eventId>:t<n>`). The shop's real tables stay
+   free for everyone else however long the event runs. "Go to table"
+   joins the call. While a
    round runs, only the two players + the organizer + judges can talk or
    show video at that table; anyone else can **watch** as a spectator
    (`tournament/speakers.js`, `eventTables.js`) - enforced by the server
@@ -556,9 +565,16 @@ The event day flow (design: `docs/superpowers/specs/2026-10-21-event-day-design.
    gets them.
 
 Views: players get a 2-column dashboard, organizers and judges a step
-bar + action bar + tabs (`client/src/ui/events/`). Known limit: two events
-running at the same time in one shop share table numbers - the
-earlier-started event keeps the in-shop tables.
+bar + action bar + tabs (`client/src/ui/events/`). During check-in the
+organizer can still change the name, start time and round time limit.
+
+**Finding events from the lobby**: the lobby's Events card
+(`client/src/ui/lobbyEvents.js`, renders only inside `#lobby-events`)
+lists open, check-in and live events from every published shop via
+`GET /events/upcoming?q=&game=&when=today|week|all`. `q` matches the shop
+or event name literally; "today"/"this week" are counted in Bangkok time.
+Live events come first, then the soonest start, then undated ones; an
+event left unstarted 24h past its start time drops off. Max 50 rows.
 
 ## The 3D shop
 
