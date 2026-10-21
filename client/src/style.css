@@ -3275,3 +3275,111 @@ button.small {
     justify-content: flex-start;
   }
 }
+
+/* ---------- Match history (ui/matchHistory.js) ---------- */
+
+.history-event > summary {
+  list-style: none;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.history-event > summary::-webkit-details-marker {
+  display: none;
+}
+
+.history-event > summary:hover,
+.history-event > summary:focus-visible {
+  border-color: var(--accent);
+}
+
+.history-event .row-title,
+.history-event .row-meta {
+  display: block;
+}
+
+.history-badges {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.history-detail {
+  padding: 8px 12px 16px;
+}
+
+.history-matches {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+}
+
+.history-match {
+  display: grid;
+  grid-template-columns: minmax(80px, auto) 1fr auto;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.history-match:has(.history-deck) {
+  grid-template-columns: minmax(80px, auto) 1fr 1fr auto;
+}
+
+.history-round {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.history-opponent {
+  overflow-wrap: anywhere;
+}
+
+.history-result-win,
+.history-result-bye {
+  background: var(--success);
+  color: var(--success-contrast);
+}
+
+.history-result-loss,
+.history-result-double_loss {
+  background: var(--danger);
+  color: var(--danger-contrast);
+}
+
+.history-penalties {
+  grid-column: 1 / -1;
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .history-event[open] .history-detail {
+    animation: history-open 160ms ease-out;
+  }
+}
+
+@keyframes history-open {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+@media (max-width: 480px) {
+  .history-event > summary {
+    flex-wrap: wrap;
+  }
+
+  .history-badges {
+    flex-direction: row;
+    width: 100%;
+    justify-content: flex-start;
+  }
+}

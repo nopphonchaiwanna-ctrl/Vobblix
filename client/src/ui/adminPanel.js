@@ -625,7 +625,7 @@ export function initAdminPanel({ getToken, onBack }) {
 
   return {
     async open() {
-      document.querySelectorAll("#auth, #lobby, #game-screen, #owner-dashboard, #orders-panel, #order-thread, #settings-panel, #events-panel, #decks-panel").forEach((s) => (s.hidden = true));
+      document.querySelectorAll("#auth, #lobby, #game-screen, #owner-dashboard, #orders-panel, #order-thread, #settings-panel, #events-panel, #decks-panel, #history-panel").forEach((s) => (s.hidden = true));
       screen.hidden = false;
       dashboardNav.setActive("applications");
       historyMode = "list";

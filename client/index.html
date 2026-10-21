@@ -148,6 +148,22 @@
   <path d="M3 7h18" />
   <rect x="3" y="3" width="18" height="18" rx="2" />
 </svg></span>My deck</button>
+            <button type="button" id="topbar-menu-history" class="topbar-menu-item" role="menuitem"><span class="icon"><svg
+  class="lucide lucide-history"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+  <path d="M3 3v5h5" />
+  <path d="M12 7v5l4 2" />
+</svg></span>Match history</button>
             <button type="button" id="topbar-menu-events" class="topbar-menu-item" role="menuitem" hidden><span class="icon"><svg
   class="lucide lucide-trophy"
   xmlns="http://www.w3.org/2000/svg"
@@ -1005,6 +1021,52 @@
         <div data-dashboard-panel="decks">
         <p id="decks-panel-error" class="error" hidden></p>
         <div id="decks-panel-body"></div>
+        </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- "Match history": the player's own finished events, round by
+         round. See ui/matchHistory.js. -->
+    <div id="history-panel" hidden>
+      <div class="dashboard-shell">
+        <aside class="dashboard-sidebar">
+          <h1 class="dashboard-sidebar-title"><span class="icon"><svg
+  class="lucide lucide-history"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+  <path d="M3 3v5h5" />
+  <path d="M12 7v5l4 2" />
+</svg></span><span>Match history</span></h1>
+          <button type="button" class="back-btn" id="history-panel-back"><span class="icon"><svg
+  class="lucide lucide-arrow-left"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="m12 19-7-7 7-7" />
+  <path d="M19 12H5" />
+</svg></span>Back</button>
+        </aside>
+        <div class="dashboard-content">
+        <div data-dashboard-panel="history">
+        <p id="history-panel-error" class="error" hidden></p>
+        <div id="history-panel-body"></div>
         </div>
         </div>
       </div>

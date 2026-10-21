@@ -20,6 +20,7 @@ import { initSettingsPanel } from "./ui/settings.js";
 import { initEventsPanel } from "./ui/eventsPanel.js";
 import { initLobbyEvents } from "./ui/lobbyEvents.js";
 import { initDecksPanel } from "./ui/decksPanel.js";
+import { initMatchHistory } from "./ui/matchHistory.js";
 import { route, setNotFound, navigate, startRouter } from "./router.js";
 import { showToast } from "./ui/toast.js";
 import { attachPasswordChecklist, attachConfirmPasswordCheck } from "./ui/passwordChecklist.js";
@@ -113,6 +114,7 @@ const topbarName = document.getElementById("topbar-name");
 const topbarMenuSettings = document.getElementById("topbar-menu-settings");
 const topbarMenuOrders = document.getElementById("topbar-menu-orders");
 const topbarMenuMydeck = document.getElementById("topbar-menu-mydeck");
+const topbarMenuHistory = document.getElementById("topbar-menu-history");
 const topbarMenuMyShop = document.getElementById("topbar-menu-myshop");
 const topbarMenuEvents = document.getElementById("topbar-menu-events");
 const topbarMenuAdmin = document.getElementById("topbar-menu-admin");
@@ -185,6 +187,11 @@ const ordersPanel = initOrdersPanel({
 });
 const eventsPanel = initEventsPanel({ getToken, getUserId, onBack: returnToMainScreen, goToMatch, watchTable });
 const decksPanel = initDecksPanel({ getToken, onBack: returnToMainScreen });
+const matchHistory = initMatchHistory({
+  getToken,
+  onBack: returnToMainScreen,
+  openEvent: (eventId) => navigate(`/events/${eventId}`),
+});
 const lobbyEvents = initLobbyEvents({
   container: document.getElementById("lobby-events"),
   getToken,
@@ -630,6 +637,10 @@ topbarMenuOrders.addEventListener("click", () => {
 topbarMenuMydeck.addEventListener("click", () => {
   closeTopbarMenu();
   navigate("/mydeck");
+});
+topbarMenuHistory.addEventListener("click", () => {
+  closeTopbarMenu();
+  navigate("/history");
 });
 topbarMenuEvents.addEventListener("click", () => {
   closeTopbarMenu();
@@ -1123,7 +1134,7 @@ function enterShop(roomId) {
     }
 
     document
-      .querySelectorAll("#auth, #lobby, #owner-dashboard, #admin-panel, #orders-panel, #order-thread, #settings-panel, #events-panel, #decks-panel")
+      .querySelectorAll("#auth, #lobby, #owner-dashboard, #admin-panel, #orders-panel, #order-thread, #settings-panel, #events-panel, #decks-panel, #history-panel")
       .forEach((s) => (s.hidden = true));
     gameScreen.hidden = false;
     activeMainPath = `/shop/${encodeURIComponent(payload.roomId)}`;
@@ -1397,6 +1408,7 @@ hud = initHud({
     { id: "events", label: "Events", icon: "trophy", onSelect: () => navigate("/shop-events") },
     { id: "orders", label: "Orders", icon: "package", onSelect: () => navigate("/orders") },
     { id: "decks", label: "Decks", icon: "wallet-cards", onSelect: () => navigate("/mydeck") },
+    { id: "history", label: "History", icon: "history", onSelect: () => navigate("/history") },
     { id: "settings", label: "Settings", icon: "settings", onSelect: () => navigate("/settings") },
     {
       id: "theme",
@@ -1485,7 +1497,7 @@ route("/login", () => {
     return;
   }
   document
-    .querySelectorAll("#lobby, #game-screen, #owner-dashboard, #admin-panel, #orders-panel, #order-thread, #settings-panel, #events-panel, #decks-panel")
+    .querySelectorAll("#lobby, #game-screen, #owner-dashboard, #admin-panel, #orders-panel, #order-thread, #settings-panel, #events-panel, #decks-panel, #history-panel")
     .forEach((s) => (s.hidden = true));
   topbar.hidden = true;
   authScreen.hidden = false;
@@ -1512,7 +1524,7 @@ route("/check-email", () => {
     return;
   }
   document
-    .querySelectorAll("#lobby, #game-screen, #owner-dashboard, #admin-panel, #orders-panel, #order-thread, #settings-panel, #events-panel, #decks-panel")
+    .querySelectorAll("#lobby, #game-screen, #owner-dashboard, #admin-panel, #orders-panel, #order-thread, #settings-panel, #events-panel, #decks-panel, #history-panel")
     .forEach((s) => (s.hidden = true));
   topbar.hidden = true;
   authScreen.hidden = false;
@@ -1532,7 +1544,7 @@ route("/verify-email", async () => {
     return;
   }
   document
-    .querySelectorAll("#lobby, #game-screen, #owner-dashboard, #admin-panel, #orders-panel, #order-thread, #settings-panel, #events-panel, #decks-panel")
+    .querySelectorAll("#lobby, #game-screen, #owner-dashboard, #admin-panel, #orders-panel, #order-thread, #settings-panel, #events-panel, #decks-panel, #history-panel")
     .forEach((s) => (s.hidden = true));
   topbar.hidden = true;
   authScreen.hidden = false;
@@ -1561,7 +1573,7 @@ route("/reset-password", () => {
     return;
   }
   document
-    .querySelectorAll("#lobby, #game-screen, #owner-dashboard, #admin-panel, #orders-panel, #order-thread, #settings-panel, #events-panel, #decks-panel")
+    .querySelectorAll("#lobby, #game-screen, #owner-dashboard, #admin-panel, #orders-panel, #order-thread, #settings-panel, #events-panel, #decks-panel, #history-panel")
     .forEach((s) => (s.hidden = true));
   topbar.hidden = true;
   authScreen.hidden = false;
@@ -1586,7 +1598,7 @@ route("/lobby", () => {
   }
   leaveShop(); // no-op if we weren't in a shop
   document
-    .querySelectorAll("#owner-dashboard, #admin-panel, #orders-panel, #order-thread, #settings-panel, #events-panel, #decks-panel")
+    .querySelectorAll("#owner-dashboard, #admin-panel, #orders-panel, #order-thread, #settings-panel, #events-panel, #decks-panel, #history-panel")
     .forEach((s) => (s.hidden = true));
   authScreen.hidden = true;
   lobby.hidden = false;
@@ -1618,7 +1630,7 @@ route("/shop/:roomId", ({ roomId }) => {
     // opened over it) - just make sure it's the one showing, no need to
     // rejoin anything.
     document
-      .querySelectorAll("#auth, #lobby, #owner-dashboard, #admin-panel, #orders-panel, #order-thread, #settings-panel, #events-panel, #decks-panel")
+      .querySelectorAll("#auth, #lobby, #owner-dashboard, #admin-panel, #orders-panel, #order-thread, #settings-panel, #events-panel, #decks-panel, #history-panel")
       .forEach((s) => (s.hidden = true));
     gameScreen.hidden = false;
     activeMainPath = `/shop/${encodeURIComponent(roomId)}`;
@@ -1650,6 +1662,14 @@ route("/mydeck", () => {
     return;
   }
   decksPanel.open();
+});
+
+route("/history", () => {
+  if (!session) {
+    navigate("/login", { replace: true });
+    return;
+  }
+  matchHistory.open();
 });
 
 route("/shop-events", () => {

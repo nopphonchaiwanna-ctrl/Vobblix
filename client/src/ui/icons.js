@@ -36,6 +36,7 @@ import x from "lucide-static/icons/x.svg?raw";
 import check from "lucide-static/icons/check.svg?raw";
 import trophy from "lucide-static/icons/trophy.svg?raw";
 import walletCards from "lucide-static/icons/wallet-cards.svg?raw";
+import history from "lucide-static/icons/history.svg?raw";
 import layoutGrid from "lucide-static/icons/layout-grid.svg?raw";
 import sunMoon from "lucide-static/icons/sun-moon.svg?raw";
 
@@ -68,6 +69,7 @@ const ICONS = {
   check,
   trophy,
   "wallet-cards": walletCards,
+  history,
   "layout-grid": layoutGrid,
   "sun-moon": sunMoon,
 };

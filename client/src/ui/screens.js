@@ -18,6 +18,7 @@ const SCREEN_IDS = [
   "settings-panel",
   "events-panel",
   "decks-panel",
+  "history-panel",
 ];
 
 export function showPanelScreen(panelEl) {

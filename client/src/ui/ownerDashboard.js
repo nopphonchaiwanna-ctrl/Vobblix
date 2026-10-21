@@ -282,7 +282,7 @@ export function initOwnerDashboard({ getToken, onBack, onShopChanged, onManageEv
 
   return {
     async open() {
-      document.querySelectorAll("#auth, #lobby, #game-screen, #admin-panel, #orders-panel, #order-thread, #settings-panel, #events-panel, #decks-panel").forEach((s) => (s.hidden = true));
+      document.querySelectorAll("#auth, #lobby, #game-screen, #admin-panel, #orders-panel, #order-thread, #settings-panel, #events-panel, #decks-panel, #history-panel").forEach((s) => (s.hidden = true));
       screen.hidden = false;
       dashboardNav.setActive("profile");
       await loadTemplatesOnce();

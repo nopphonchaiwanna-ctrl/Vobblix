@@ -271,6 +271,11 @@ export function upcomingEvents(token, { q = "", game = "", when = "" } = {}) {
   return request(`/events/upcoming${qs ? `?${qs}` : ""}`, { token });
 }
 
+/** The caller's own finished events, round by round: { events }. */
+export function getMatchHistory(token) {
+  return request("/events/history", { token });
+}
+
 export function getEvent(token, eventId) {
   return request(`/events/${eventId}`, { token });
 }
