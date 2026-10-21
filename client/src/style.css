@@ -3223,6 +3223,14 @@ button.small {
   border-color: var(--accent);
 }
 
+.lobby-events-list[aria-busy="true"] .lobby-event-row {
+  opacity: 0.55;
+}
+
+.lobby-events-updating {
+  margin: 0 0 6px;
+}
+
 .lobby-event-row {
   width: 100%;
   text-align: left;

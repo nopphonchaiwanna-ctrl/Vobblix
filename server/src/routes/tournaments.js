@@ -112,6 +112,18 @@ function parseRoundTimeLimit(raw) {
   return minutes;
 }
 
+/**
+ * startsAt on an edit: left out keeps the current one; a set start time
+ * can't be cleared back to "no date" (new events need one too).
+ * Returns { error } or { startsAt } (null = keep).
+ */
+function parseEditStartsAt(body, event) {
+  const given = body && Object.hasOwn(body, "startsAt");
+  const startsAt = parseStartsAt(body?.startsAt);
+  if (startsAt === undefined || (given && startsAt === null && event.starts_at)) return { error: STARTS_AT_ERROR };
+  return { startsAt };
+}
+
 async function requireShopOwnerOrAdmin(req, res, shopId) {
   const shop = await getShopById(shopId);
   if (!shop) {
@@ -421,19 +433,18 @@ export function createTournamentsRouter(io) {
   // so only the name, round time limit and start time can. Once rounds are
   // running only the name and round time limit can - format, cut and draw
   // rule already shaped the pairings and standings. A missing startsAt
-  // keeps the current one (older events may have none); a past one is
-  // allowed here and simply closes registration.
+  // keeps the current one (older events may have none); a set one can't
+  // be cleared; a past one is allowed here and simply closes registration.
   tournamentsRouter.patch("/:id", async (req, res, next) => {
     try {
       const event = await requireEventOwnerOrAdmin(req, res, req.params.id);
       if (!event) return;
 
-      const startsAt = parseStartsAt(req.body?.startsAt);
-      if (startsAt === undefined) return res.status(400).json({ error: STARTS_AT_ERROR });
-
       if (event.status === "registration") {
         const parsed = parseEventSettings(req.body);
         if (parsed.error) return res.status(400).json({ error: parsed.error });
+        const { error: startsAtError, startsAt } = parseEditStartsAt(req.body, event);
+        if (startsAtError) return res.status(400).json({ error: startsAtError });
         const activeCount = await db.countEnteredPlayers(event.id);
         if (parsed.fields.registrationMode !== event.registration_mode && (await db.countActivePlayers(event.id)) > 0) {
           return res.status(409).json({ error: "How players get in can't change once someone has registered." });
@@ -461,6 +472,8 @@ export function createTournamentsRouter(io) {
         const roundTimeLimitMinutes = parseRoundTimeLimit(req.body?.roundTimeLimitMinutes);
         if (!name) return res.status(400).json({ error: "Enter an event name." });
         if (roundTimeLimitMinutes === undefined) return res.status(400).json({ error: ROUND_TIME_LIMIT_ERROR });
+        const { error: startsAtError, startsAt } = parseEditStartsAt(req.body, event);
+        if (startsAtError) return res.status(400).json({ error: startsAtError });
         const updated = await db.updateEventCheckInBasics(event.id, { name, roundTimeLimitMinutes, startsAt });
         if (!updated) return res.status(409).json({ error: "This event has just started - reload and try again." });
         return res.json({ event: publicEvent(updated) });

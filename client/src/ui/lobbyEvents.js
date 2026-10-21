@@ -33,11 +33,19 @@ export function initLobbyEvents({ container, getToken, openEvent }) {
         ${WHEN_OPTIONS.map(([v, l]) => `<button type="button" class="secondary small" data-when="${v}">${l}</button>`).join("")}
       </div>
     </div>
+    <p class="hint lobby-events-updating" hidden>Updating…</p>
     <div class="list lobby-events-list" aria-live="polite"></div>`;
   const search = container.querySelector(".lobby-events-search");
   const gameSelect = container.querySelector(".lobby-events-game");
   const whenButtons = [...container.querySelectorAll("[data-when]")];
   const list = container.querySelector(".lobby-events-list");
+  const updating = container.querySelector(".lobby-events-updating");
+
+  // Old rows stay up (dimmed) while a new filter loads, so the list doesn't jump.
+  function setBusy(busy) {
+    list.setAttribute("aria-busy", String(busy));
+    updating.hidden = !busy || !list.querySelector(".lobby-event-row");
+  }
 
   function syncWhen() {
     for (const b of whenButtons) b.setAttribute("aria-pressed", String(b.dataset.when === filters.when));
@@ -72,14 +80,19 @@ export function initLobbyEvents({ container, getToken, openEvent }) {
   async function refresh() {
     const seq = ++requestSeq;
     if (!list.children.length) list.innerHTML = `<p class="list-empty">Loading events…</p>`;
+    setBusy(true);
     let events;
     try {
       ({ events } = await upcomingEvents(getToken(), filters));
     } catch {
-      if (seq === requestSeq) list.innerHTML = `<p class="list-empty">Couldn't load events right now.</p>`;
+      if (seq === requestSeq) {
+        setBusy(false);
+        list.innerHTML = `<p class="list-empty">Couldn't load events right now.</p>`;
+      }
       return;
     }
     if (seq !== requestSeq) return; // a newer search already went out
+    setBusy(false);
     list.innerHTML = events.length
       ? events.map(rowHtml).join("")
       : `<p class="list-empty">No events match - try another shop name or All dates.</p>`;

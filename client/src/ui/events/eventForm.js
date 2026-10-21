@@ -29,7 +29,8 @@ export function eventFormHtml({ values = {}, submitLabel, mode = "full", cancelL
       ? ""
       : `<label>Start date &amp; time
            <input type="datetime-local" id="events-form-starts" value="${escapeHtml(toLocalInputValue(values.startsAt))}"
-             ${creating ? `required min="${toLocalInputValue(new Date().toISOString())}"` : ""} />
+             ${creating ? `min="${toLocalInputValue(new Date().toISOString())}"` : ""}
+             ${creating || values.startsAt ? "required" : ""} />
          </label>`;
   const settings = mode !== "full"
     ? ""

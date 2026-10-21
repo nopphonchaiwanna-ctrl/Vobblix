@@ -15,6 +15,17 @@ test("parseStartsAt: ISO string -> Date, blank -> null, anything else -> invalid
   assert.equal(parseStartsAt(12), undefined);
 });
 
+test("parseStartsAt: only a full ISO time with a zone, a real calendar date and a sane year", () => {
+  assert.equal(parseStartsAt("2026-11-01T13:00+07:00").toISOString(), "2026-11-01T06:00:00.000Z");
+  assert.equal(parseStartsAt("2027"), undefined);
+  assert.equal(parseStartsAt("2026-11-01T13:00"), undefined, "no zone");
+  assert.equal(parseStartsAt("2026-02-30T10:00:00Z"), undefined, "no Feb 30");
+  assert.equal(parseStartsAt("2028-02-29T10:00:00Z").toISOString(), "2028-02-29T10:00:00.000Z");
+  assert.equal(parseStartsAt("2026-11-01T24:00:00Z"), undefined);
+  assert.equal(parseStartsAt("-271821-04-20T00:00:00Z"), undefined);
+  assert.equal(parseStartsAt("3100-01-01T00:00:00Z"), undefined);
+});
+
 test("isPastStart: no start time never passes; the start instant itself has passed", () => {
   assert.equal(isPastStart(null, now), false);
   assert.equal(isPastStart(now, now), true);

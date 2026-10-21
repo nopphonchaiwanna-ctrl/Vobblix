@@ -93,6 +93,29 @@ describe("event day", { skip: SKIP_REASON }, () => {
     assert.equal(bad.body.error, "Choose the event's start date and time.");
   });
 
+  test("a set start time can't be cleared by an edit", async () => {
+    const event = await createEvent();
+    const base = { name: "Day", game: "vanguard", vanguardRegion: "th", vanguardRegulation: "d_standard", format: "swiss_only", maxPlayers: 4, drawRule: "double_loss" };
+    for (const startsAt of [null, ""]) {
+      const r = await api.patch(`/events/${event.id}`, owner.token, { ...base, startsAt });
+      assert.equal(r.status, 400);
+      assert.equal(r.body.error, "Choose the event's start date and time.");
+    }
+    const kept = await api.patch(`/events/${event.id}`, owner.token, base);
+    assert.equal(kept.status, 200, "leaving it out keeps it");
+    assert.equal(kept.body.event.startsAt, FUTURE_START);
+  });
+
+  test("while rounds run, a stray startsAt is ignored, not refused", async () => {
+    const event = await createEvent();
+    await registerAll(event.id, players.slice(0, 4));
+    await openCheckInAndApproveAll(api, owner.token, event.id);
+    assert.equal((await api.post(`/events/${event.id}/start`, owner.token)).status, 200);
+    const r = await api.patch(`/events/${event.id}`, owner.token, { name: "Live", startsAt: "soon" });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.event.startsAt, FUTURE_START);
+  });
+
   test("first come: the 5th is waitlisted, and moves up when someone drops", async () => {
     const event = await createEvent();
     for (const p of players.slice(0, 4)) {
