@@ -1215,7 +1215,18 @@
   <path d="M6 9a6 6 0 0 0 12 0V3a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1z" />
   <path d="M6.084 10H4.5A2.5 2.5 0 0 1 2 7.5V5a1 1 0 0 1 1-1h3" />
 </svg></span>Events</button>
-      <div id="game"></div>
+      <div id="game">
+        <!-- ShopWorld (scene3d/) renders into #game-view; the overlays
+             below sit on top of the 3D view and are never replaced. -->
+        <div id="game-view"></div>
+        <!-- What the player is standing at (a table, the events board...)
+             - one button, never opens anything on its own. -->
+        <div id="interact-prompt" class="interact-prompt" hidden>
+          <button type="button" id="interact-btn" class="interact-btn"></button>
+          <span class="interact-key" aria-hidden="true">E</span>
+        </div>
+        <button type="button" id="leave-table-btn" class="leave-table-btn" hidden></button>
+      </div>
 
       <aside id="chat-panels">
         <section class="chat-panel" id="shop-chat-panel">

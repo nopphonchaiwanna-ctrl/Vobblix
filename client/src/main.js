@@ -3,6 +3,8 @@ import { initChatUI } from "./ui/chat.js";
 import { initCallUI } from "./ui/call.js";
 import { createCallManager } from "./webrtc/callManager.js";
 import ShopWorld from "./scene3d/ShopWorld.js";
+import { strings } from "./scene3d/strings.js";
+import { isTextInputFocused } from "./scene3d/input.js";
 import { listNotifications, markNotificationsRead, getIceServers } from "./net/api.js";
 import { login, register, me, applyForOwner, myApplication, publicShops, myShop, blockUser, unblockUser, listBlockedUsers, verifyEmail, resendVerification, forgotPassword, resetPassword } from "./net/api.js";
 import { getSavedToken, saveToken, clearToken } from "./auth/session.js";
@@ -971,16 +973,19 @@ function setupCall(callUI, chatUI) {
     onError: (message) => callUI.showError(message),
   });
 
+  async function joinCall() {
+    callUI.setJoinBusy(true);
+    const result = await manager.join();
+    callUI.setJoinBusy(false);
+    if (result.ok) {
+      callUI.showJoined(true);
+      chatUI.addVoiceParticipant({ id: "local", name: "You" });
+    }
+    return result;
+  }
+
   callUI.setHandlers({
-    onJoin: async () => {
-      callUI.setJoinBusy(true);
-      const result = await manager.join();
-      callUI.setJoinBusy(false);
-      if (result.ok) {
-        callUI.showJoined(true);
-        chatUI.addVoiceParticipant({ id: "local", name: "You" });
-      }
-    },
+    onJoin: joinCall,
     onLeave: () => {
       manager.leave();
       callUI.showJoined(false);
@@ -1025,6 +1030,9 @@ function setupCall(callUI, chatUI) {
   });
 
   return {
+    // "Join table" also joins that table's voice call, mic on, camera
+    // off (the camera only ever turns on from its own button).
+    joinCall,
     onTableChanged(tableLabel) {
       // Leaving the table (or switching to a different one) always ends
       // the call - the server does the same server-side (see
@@ -1133,7 +1141,7 @@ function enterShop(roomId) {
     currentFloor = payload.floor;
     sizeGameScreen();
     currentWorld = new ShopWorld({
-      container: document.getElementById("game"),
+      container: document.getElementById("game-view"),
       socket,
       you: payload.you,
       players: payload.players,
@@ -1145,8 +1153,65 @@ function enterShop(roomId) {
       chatUI,
       callHooks: currentCallTeardown,
     });
+    currentWorld.onNearChange(showInteractPrompt);
   });
 }
+
+// ---------- In-shop interactions ----------
+// ShopWorld reports what the player is standing at; this shows the one
+// matching button. Nothing opens or joins by walking alone.
+const interactPrompt = document.getElementById("interact-prompt");
+const interactBtn = document.getElementById("interact-btn");
+const leaveTableBtn = document.getElementById("leave-table-btn");
+leaveTableBtn.textContent = strings.leaveTable;
+let currentNear = null;
+
+const PROMPT_LABELS = { table: strings.joinTable, board: strings.viewEvents, counter: strings.openShop };
+
+function showInteractPrompt(near) {
+  // The counter's listings dialog arrives with the in-shop HUD.
+  currentNear = near && near.kind !== "counter" ? near : null;
+  interactPrompt.hidden = !currentNear;
+  if (currentNear) interactBtn.textContent = PROMPT_LABELS[currentNear.kind];
+}
+
+async function actOnNear() {
+  const near = currentNear;
+  if (!near || !currentWorld) return;
+  if (near.kind === "board") {
+    navigate("/shop-events");
+    return;
+  }
+  if (near.kind === "table") {
+    interactBtn.disabled = true;
+    const result = await currentWorld.joinTable(near.id);
+    interactBtn.disabled = false;
+    if (!result.ok) {
+      if (result.reason === "too-far") showToast(strings.tooFar);
+      return;
+    }
+    leaveTableBtn.hidden = false;
+    // Same click that sat the player down - mic permission prompt (if
+    // any) appears right away. Refusing it still leaves them seated
+    // with table chat working.
+    currentCallTeardown?.joinCall();
+  }
+}
+
+interactBtn.addEventListener("click", actOnNear);
+leaveTableBtn.addEventListener("click", () => {
+  currentWorld?.leaveTable();
+  leaveTableBtn.hidden = true;
+});
+window.addEventListener("keydown", (e) => {
+  if (!currentWorld || gameScreen.hidden || isTextInputFocused() || e.repeat) return;
+  if (e.code === "KeyE" || e.code === "Enter") {
+    if (!interactPrompt.hidden) {
+      e.preventDefault();
+      actOnNear();
+    }
+  }
+});
 
 // Leaves the current shop (if any) and tears it down - used by the
 // /lobby route (going back to the lobby from inside a shop), switching
@@ -1162,6 +1227,8 @@ function leaveShop() {
   currentCallTeardown?.destroy();
   currentCallTeardown = null;
   currentWorld.destroy();
+  leaveTableBtn.hidden = true;
+  interactPrompt.hidden = true;
   currentFloor = null;
   currentWorld = null;
   currentShopRoomId = null;

@@ -303,6 +303,51 @@ export default class ShopWorld {
     if (locked) this.input?.clear();
   }
 
+  /**
+   * Sits down at `tableId` (the player must be in its range - the server
+   * checks too, see server/src/tableRange.js): table chat + history,
+   * movement locked, camera moved in over the table, body.seated set.
+   * Resolves {ok:false, reason} without changing anything if refused.
+   */
+  joinTable(tableId) {
+    const table = this.tables.find((t) => t.id === tableId);
+    if (!table || this.currentTableId) return Promise.resolve({ ok: false, reason: "unknown" });
+    return new Promise((resolve) => {
+      // join-table ignores unknown tables without acking - don't hang.
+      const timer = setTimeout(() => resolve({ ok: false, reason: "timeout" }), 5000);
+      this.socket.emit("join-table", { tableId }, (payload) => {
+        clearTimeout(timer);
+        if (this.destroyed) return resolve({ ok: false, reason: "gone" });
+        if (payload?.error) return resolve({ ok: false, reason: payload.error });
+        this.currentTableId = tableId;
+        this.setMovementLocked(true);
+        this.chatUI.clearTableLog();
+        this.chatUI.setSeatedAt(table.label);
+        for (const msg of payload?.history || []) {
+          this.chatUI.appendTableMessage({ from: msg.author_name, text: msg.text, authorId: msg.user_id });
+        }
+        this.callHooks?.onTableChanged(table.label);
+        this.rig.toSeated(table, { instant: prefersReducedMotion() });
+        document.body.classList.add("seated");
+        this.updateNear();
+        resolve({ ok: true, table });
+      });
+    });
+  }
+
+  /** Gets up from the current table (ends the call too) and walks again. */
+  leaveTable() {
+    if (!this.currentTableId) return;
+    this.socket.emit("leave-table");
+    this.currentTableId = null;
+    this.chatUI.clearTableLog();
+    this.chatUI.setSeatedAt(null);
+    this.callHooks?.onTableChanged(null);
+    this.setMovementLocked(false);
+    this.rig.toFollow({ instant: prefersReducedMotion() });
+    document.body.classList.remove("seated");
+  }
+
   /** Thumbstick input from the mobile HUD, floor-space vector of length <= 1. */
   setAnalogInput(vec) {
     this.input?.setAnalog(vec);
@@ -322,6 +367,7 @@ export default class ShopWorld {
     if (this.destroyed) return;
     this.destroyed = true;
     cancelAnimationFrame(this.frame);
+    document.body.classList.remove("seated");
     if (this.handlers) for (const [event, fn] of Object.entries(this.handlers)) this.socket.off(event, fn);
     this.resizeObserver?.disconnect();
     this.input?.destroy();
@@ -392,6 +438,10 @@ export default class ShopWorld {
     this.near = found;
     for (const cb of this.nearListeners) cb(found);
   }
+}
+
+function prefersReducedMotion() {
+  return matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
 // ---------- Procedural textures ----------
