@@ -12,3 +12,4 @@ untranslated_batch*.csv
 # Local Claude Code tooling (Impeccable skill/agents, personal settings)
 .claude/
 .vscode/
+.superpowers/
