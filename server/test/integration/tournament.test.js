@@ -29,6 +29,8 @@ describe("tournament flow", { skip: SKIP_REASON }, () => {
     const r = await api.post("/events", owner.token, {
       shopId: shop.id,
       game: "vanguard",
+      vanguardRegion: "th",
+      vanguardRegulation: "d_standard",
       format: "swiss_only",
       maxPlayers: 8,
       drawRule: "double_loss",

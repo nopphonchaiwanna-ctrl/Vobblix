@@ -9,7 +9,7 @@ describe("event edit + cancel", { skip: SKIP_REASON }, () => {
   let owner;
   let player;
   let shop;
-  const base = { name: "Friday Swiss", game: "vanguard", format: "swiss_only", maxPlayers: 4, drawRule: "double_loss", roundTimeLimitMinutes: 50 };
+  const base = { name: "Friday Swiss", game: "vanguard", vanguardRegion: "th", vanguardRegulation: "d_standard", format: "swiss_only", maxPlayers: 4, drawRule: "double_loss", roundTimeLimitMinutes: 50 };
 
   before(async () => {
     await resetDatabase();
@@ -33,6 +33,29 @@ describe("event edit + cancel", { skip: SKIP_REASON }, () => {
     assert.equal((await api.post("/events", owner.token, { shopId: shop.id, ...base, maxPlayers: 7 })).status, 400);
     assert.equal((await api.post("/events", owner.token, { shopId: shop.id, ...base, game: "pokemon" })).status, 400);
     assert.equal((await api.post("/events", player.token, { shopId: shop.id, ...base })).status, 403);
+  });
+
+  test("Vanguard events need TH/JP and a regulation", async () => {
+    const r = await api.post("/events", owner.token, { shopId: shop.id, ...base, vanguardRegion: undefined });
+    assert.equal(r.status, 400);
+    assert.equal(r.body.error, "Choose TH or JP for a Vanguard event.");
+    const r2 = await api.post("/events", owner.token, { shopId: shop.id, ...base, vanguardRegulation: "classic" });
+    assert.equal(r2.status, 400);
+    assert.equal(r2.body.error, "Choose Premium or D-Standard for a Vanguard event.");
+  });
+
+  test("format fields and registration mode round-trip", async () => {
+    const event = await newEvent({ vanguardRegion: "jp", vanguardRegulation: "premium" });
+    assert.equal(event.vanguardRegion, "jp");
+    assert.equal(event.vanguardRegulation, "premium");
+    assert.equal(event.registrationMode, "first_come");
+    const r = await api.patch(`/events/${event.id}`, owner.token, { ...base, registrationMode: "lottery" });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.event.registrationMode, "lottery");
+    assert.equal(r.body.event.vanguardRegion, "th");
+    const bad = await api.patch(`/events/${event.id}`, owner.token, { ...base, registrationMode: "auction" });
+    assert.equal(bad.status, 400);
+    assert.equal(bad.body.error, "Choose how players get in: first come or lottery.");
   });
 
   test("while registering, every setting can be edited", async () => {

@@ -35,6 +35,9 @@ const MAX_ROUND_TIME_LIMIT_MINUTES = 2880; // 2 days
 // create-event dropdown, see eventsPanel.js's GAME_LABELS) as support
 // for them is built, same pattern as everything else in migration 009.
 const VALID_GAMES = ["vanguard"];
+const REGISTRATION_MODES = ["first_come", "lottery"];
+const VANGUARD_REGIONS = ["th", "jp"];
+const VANGUARD_REGULATIONS = ["premium", "d_standard"];
 
 // ---------- Shared helpers ----------
 
@@ -54,9 +57,19 @@ function parseEventSettings(body) {
   const configuredCutSize = format === "swiss_cut" ? Number(body?.configuredCutSize) : null;
   const maxPlayers = Number(body?.maxPlayers);
   const roundTimeLimitMinutes = parseRoundTimeLimit(body?.roundTimeLimitMinutes);
+  const registrationMode = body?.registrationMode ?? "first_come";
+  // Region (TH/JP card pool) + regulation only mean something for
+  // Vanguard; any other game stores null.
+  const vanguardRegion = game === "vanguard" ? body?.vanguardRegion : null;
+  const vanguardRegulation = game === "vanguard" ? body?.vanguardRegulation : null;
 
   if (!name) return { error: "Enter an event name." };
   if (!VALID_GAMES.includes(game)) return { error: "Choose a supported game." };
+  if (!REGISTRATION_MODES.includes(registrationMode)) return { error: "Choose how players get in: first come or lottery." };
+  if (game === "vanguard" && !VANGUARD_REGIONS.includes(vanguardRegion)) return { error: "Choose TH or JP for a Vanguard event." };
+  if (game === "vanguard" && !VANGUARD_REGULATIONS.includes(vanguardRegulation)) {
+    return { error: "Choose Premium or D-Standard for a Vanguard event." };
+  }
   if (format === "swiss_cut" && !isValidCutSize(configuredCutSize)) {
     return { error: "Cut size must be one of 4, 8, 16, 32, 64." };
   }
@@ -64,7 +77,9 @@ function parseEventSettings(body) {
     return { error: "Player limit must be one of 4, 8, 16, 32, 64." };
   }
   if (roundTimeLimitMinutes === undefined) return { error: ROUND_TIME_LIMIT_ERROR };
-  return { fields: { name, game, format, configuredCutSize, drawRule, maxPlayers, roundTimeLimitMinutes } };
+  return {
+    fields: { name, game, format, configuredCutSize, drawRule, maxPlayers, roundTimeLimitMinutes, registrationMode, vanguardRegion, vanguardRegulation },
+  };
 }
 
 const ROUND_TIME_LIMIT_ERROR = "Round time limit must be between 1 minute and 2 days (2880 minutes).";
@@ -183,6 +198,11 @@ function publicEvent(event) {
     maxPlayers: event.max_players,
     roundTimeLimitMinutes: event.round_time_limit_minutes,
     drawRule: event.draw_rule,
+    registrationMode: event.registration_mode,
+    vanguardRegion: event.vanguard_region,
+    vanguardRegulation: event.vanguard_regulation,
+    lotteryDrawnAt: event.lottery_drawn_at,
+    checkInOpenedAt: event.check_in_opened_at,
     status: event.status,
     currentPhase: event.current_phase,
     roundCount: event.round_count,

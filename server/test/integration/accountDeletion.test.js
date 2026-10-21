@@ -28,7 +28,7 @@ describe("account deletion + join-shop", { skip: SKIP_REASON }, () => {
     // Buyer has: an open order, a finished-ish event entry, an open registration.
     const listing = (await api.post(`/shops/${shop.id}/listings`, owner.token, { title: "Booster box", priceCents: 150000 })).body.listing;
     assert.equal((await api.post("/orders", buyer.token, { listingId: listing.id, message: "Still available?" })).status, 201);
-    const ev = (fields) => api.post("/events", owner.token, { shopId: shop.id, game: "vanguard", format: "swiss_only", maxPlayers: 8, drawRule: "double_loss", ...fields });
+    const ev = (fields) => api.post("/events", owner.token, { shopId: shop.id, game: "vanguard", vanguardRegion: "th", vanguardRegulation: "d_standard", format: "swiss_only", maxPlayers: 8, drawRule: "double_loss", ...fields });
     pastEvent = (await ev({ name: "Past" })).body.event;
     await api.post(`/events/${pastEvent.id}/register`, buyer.token);
     await api.post(`/events/${pastEvent.id}/register`, owner.token);
