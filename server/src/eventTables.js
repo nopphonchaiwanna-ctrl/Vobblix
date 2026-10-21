@@ -25,7 +25,8 @@ async function load(shopDbId) {
   if (!shop) return { shop, tables };
   const scene = resolveScene(shop);
   const { rows } = await pool.query(
-    `SELECT m.id AS match_id, m.event_id, m.table_number, m.table_online, p1.user_id AS u1, p2.user_id AS u2
+    `SELECT m.id AS match_id, m.event_id, m.table_number, m.table_online,
+            p1.user_id AS u1, p2.user_id AS u2, p1.dropped AS d1, p2.dropped AS d2
      FROM tournament_matches m
      JOIN tournament_events e ON e.id = m.event_id
      JOIN tournament_players p1 ON p1.id = m.player1_id
@@ -44,6 +45,8 @@ async function load(shopDbId) {
     const sceneTable = r.table_online ? null : scene.TABLES[r.table_number - 1];
     const tableId = sceneTable ? sceneTable.id : onlineTableId(r.event_id, r.table_number);
     if (tables.has(tableId)) continue; // two events on one floor: the earlier-started one keeps the table
+    // A player dropped mid-round (e.g. disqualified) loses their voice here.
+    const speakingPlayers = [r.d1 ? null : r.u1, r.d2 ? null : r.u2];
     tables.set(tableId, {
       eventId: r.event_id,
       matchId: r.match_id,
@@ -52,7 +55,7 @@ async function load(shopDbId) {
       table: sceneTable,
       playerUserIds: [r.u1, r.u2].filter(Boolean),
       staffUserIds: new Set(staff),
-      speakerUserIds: speakerUserIds({ playerUserIds: [r.u1, r.u2], staffUserIds: staff }),
+      speakerUserIds: speakerUserIds({ playerUserIds: speakingPlayers, staffUserIds: staff }),
     });
   }
   return { shop, tables };

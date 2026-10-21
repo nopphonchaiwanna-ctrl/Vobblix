@@ -942,6 +942,17 @@ function setupCall(callUI, chatUI) {
       callUI.setSpectator(role === "spectator");
       for (const id of callUI.peerIds()) callUI.setPeerAllowed(id, manager.canPlay(id));
     },
+    // A round started/ended and our role at this table flipped: the call
+    // is rejoined from scratch, so the panel starts over too.
+    onRejoining: () => {
+      callUI.clearTiles();
+      callUI.showVideoOn(false);
+      chatUI.clearVoiceRoster();
+    },
+    onRejoined: (result) => {
+      callUI.showJoined(!!result?.ok);
+      if (result?.ok) chatUI.addVoiceParticipant({ id: "local", name: "You" });
+    },
     onLocalStream: (stream) => callUI.setLocalStream(stream),
     onPeerJoined: (peer) => {
       callUI.addPeer(peer);

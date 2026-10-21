@@ -46,6 +46,8 @@ const VIDEO_MAX_BITRATE = 1_500_000; // bps per outgoing stream
  *   fetchIceServers?: () => Promise<RTCIceServer[]>,
  *   getUserId?: () => string,
  *   onRoleChanged?: (role: "speaker"|"spectator", speakerUserIds: Set<string>|null) => void,
+ *   onRejoining?: () => void,
+ *   onRejoined?: (result: { ok: boolean, role?: string, reason?: string }) => void,
  * }} handlers
  */
 export function createCallManager(handlers) {
@@ -303,8 +305,11 @@ export function createCallManager(handlers) {
     const nextRole = !speakerUserIds || speakerUserIds.has(handlers.getUserId?.()) ? "speaker" : "spectator";
     handlers.onRoleChanged?.(nextRole, speakerUserIds);
     if (nextRole !== role) {
+      // Tell the UI first so it drops the old tiles / camera state, then
+      // whether getting back in worked (e.g. the spectator seats are full).
+      handlers.onRejoining?.();
       leave();
-      await join();
+      handlers.onRejoined?.(await join());
     }
   }
 

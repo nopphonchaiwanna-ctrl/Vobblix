@@ -138,6 +138,37 @@ describe("event match tables", { skip: SKIP_REASON }, () => {
     assert.ok(await lock, "the table's lock now includes the new judge");
   });
 
+  test("a disqualified player loses their voice at the table right away", async () => {
+    let player = null;
+    for (const p of players.slice(0, 10)) {
+      if ((await matchOf(p.id)).tableNumber === 3) { player = p; break; }
+    }
+    const match = await matchOf(player.id);
+    const opponentPlayerId = match.player1Id;
+    const { body } = await api.get(`/events/${event.id}`, owner.token);
+    const me = body.players.find((x) => x.userId === player.id);
+    const opp = body.players.find((x) => x.id === (match.player1Id === me.id ? match.player2Id : match.player1Id));
+    const oppSocket = await enterShop(players.find((p) => p.id === opp.userId).token);
+    const go = await emit(oppSocket, "go-to-match", { eventId: event.id });
+    oppSocket.emit("move", { x: go.x, y: go.y });
+    await new Promise((r) => setTimeout(r, 100));
+    await emit(oppSocket, "join-table", { tableId: go.tableId });
+    await emit(oppSocket, "join-call", {});
+    const lock = new Promise((resolve) => {
+      const t = setTimeout(() => resolve(null), 3000);
+      oppSocket.on("table-lock", (l) => {
+        if (l.tableId === go.tableId && l.speakerUserIds && !l.speakerUserIds.includes(player.id)) {
+          clearTimeout(t);
+          resolve(l);
+        }
+      });
+    });
+    const dq = await api.post(`/events/${event.id}/penalties`, owner.token, { playerId: me.id, level: "disqualification", reason: "Test" });
+    assert.equal(dq.status, 201);
+    assert.ok(await lock, "the table's speakers no longer include the disqualified player");
+    void opponentPlayerId;
+  });
+
   test("an unknown online table can't be joined", async () => {
     const s = await enterShop(players[10].token);
     const r = await emit(s, "join-table", { tableId: `event:${event.id}:t99` });

@@ -41,12 +41,23 @@ export async function lastCallBy(matchId, userId) {
   return rows[0] || null;
 }
 
-export async function createJudgeCall(eventId, matchId, userId) {
+/**
+ * Records a call unless this user called on this match within
+ * `cooldownMs` (checked and inserted in one statement, so two quick
+ * clicks can't both get through). null = still cooling down.
+ */
+export async function createJudgeCall(eventId, matchId, userId, cooldownMs) {
   const { rows } = await pool.query(
-    `INSERT INTO judge_calls (event_id, match_id, called_by) VALUES ($1, $2, $3) RETURNING *`,
-    [eventId, matchId, userId]
+    `INSERT INTO judge_calls (event_id, match_id, called_by)
+     SELECT $1, $2, $3
+     WHERE NOT EXISTS (
+       SELECT 1 FROM judge_calls
+       WHERE match_id = $2 AND called_by = $3 AND created_at > now() - ($4::float8 * interval '1 millisecond')
+     )
+     RETURNING *`,
+    [eventId, matchId, userId, cooldownMs]
   );
-  return rows[0];
+  return rows[0] || null;
 }
 
 export async function getJudgeCall(callId) {

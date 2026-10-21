@@ -56,7 +56,11 @@ function isCurrentRoundMatch(event, match) {
   return RUNNING.includes(event.status) && match.phase === event.current_phase && match.round_number === event.current_round;
 }
 
-/** The effect of a confirmed match loss / DQ - results only ever change for the current round. */
+/**
+ * The effect of a confirmed match loss / DQ - results only ever change
+ * for the current round. Returns the waitlister who got a DQ'd player's
+ * spot (before the start), if any.
+ */
 async function applyPenalty(event, penalty, decidedBy) {
   const lossFor = async (match, playerId) => {
     if (!match || !match.player2_id || !isCurrentRoundMatch(event, match)) return;
@@ -64,12 +68,16 @@ async function applyPenalty(event, penalty, decidedBy) {
   };
   if (penalty.level === "match_loss") {
     await lossFor(await db.getMatchById(penalty.match_id), penalty.player_id);
-  } else if (penalty.level === "disqualification") {
-    await db.dropAndPromote(penalty.player_id);
+    return null;
+  }
+  if (penalty.level === "disqualification") {
+    const { promoted } = await db.dropAndPromote(penalty.player_id);
     const current = await db.getMatchesForRound(event.id, event.current_phase, event.current_round);
     const theirs = current.find((m) => !m.result && (m.player1_id === penalty.player_id || m.player2_id === penalty.player_id));
     await lossFor(theirs, penalty.player_id);
+    return promoted;
   }
+  return null;
 }
 
 export function createJudgingRouter(io) {
@@ -157,7 +165,10 @@ export function createJudgingRouter(io) {
         return res.status(429).json({ error: "A judge is on the way - you can call again shortly.", retryAfterSeconds: Math.ceil(waitMs / 1000) });
       }
 
-      const call = await judging.createJudgeCall(event.id, match.id, req.auth.userId);
+      const call = await judging.createJudgeCall(event.id, match.id, req.auth.userId, RECALL_COOLDOWN_MS);
+      if (!call) {
+        return res.status(429).json({ error: "A judge is on the way - you can call again shortly.", retryAfterSeconds: Math.ceil(RECALL_COOLDOWN_MS / 1000) });
+      }
       const shop = await getShopById(event.shop_id);
       const staff = [shop?.owner_user_id, ...(await judging.listJudges(event.id)).map((j) => j.user_id)].filter(Boolean);
       const table = match.table_number ? `Table ${match.table_number}${match.table_online ? " (online)" : ""}` : "A match";
@@ -212,6 +223,21 @@ export function createJudgingRouter(io) {
 
   // ---------- Penalties ----------
 
+  // After a confirmed penalty: a DQ frees a spot (tell whoever got it)
+  // and takes the player's voice at their table (refresh the lock).
+  async function afterPenalty(event, penalty, decidedBy) {
+    const promoted = await applyPenalty(event, penalty, decidedBy);
+    if (promoted) {
+      await notifyUser(promoted.user_id, {
+        eventId: event.id,
+        kind: "event_promoted",
+        message: `You're in "${event.name}" - a spot opened up.`,
+        target: `/events/${event.id}`,
+      });
+    }
+    if (penalty.level === "disqualification") await refreshEventTables(io, event.shop_id);
+  }
+
   router.post("/:id/penalties", async (req, res, next) => {
     try {
       const event = await loadEvent(req, res);
@@ -234,7 +260,7 @@ export function createJudgingRouter(io) {
       const penalty = await judging.createPenalty({
         eventId: event.id, playerId: player.id, matchId, level, reason, issuedBy: req.auth.userId, status: outcome.status,
       });
-      if (penalty.status === "confirmed") await applyPenalty(event, penalty, req.auth.userId);
+      if (penalty.status === "confirmed") await afterPenalty(event, penalty, req.auth.userId);
       await notifyUser(player.user_id, {
         eventId: event.id, kind: "event_penalty",
         message: `${event.name}: you received ${LEVEL_LABEL[level]}${penalty.status === "pending" ? " (pending the organizer)" : ""} - ${reason}`,
@@ -262,7 +288,7 @@ export function createJudgingRouter(io) {
         }
         const decided = await judging.decidePenalty(existing.id, status, req.auth.userId);
         if (!decided) return res.status(409).json({ error: "This penalty was already decided." });
-        if (status === "confirmed") await applyPenalty(event, decided, req.auth.userId);
+        if (status === "confirmed") await afterPenalty(event, decided, req.auth.userId);
         res.json({ penalty: publicPenalty(decided) });
       } catch (err) {
         next(err);

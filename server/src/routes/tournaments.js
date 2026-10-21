@@ -246,7 +246,7 @@ async function withTables(event, pairings, pointsById = new Map()) {
   return assignTables(seeded, physical);
 }
 
-/** A player's own penalties - none at all if they have no (active) entry. */
+/** A player's own penalties (even after a DQ dropped them) - none if they never entered. */
 async function ownPenalties(eventId, playerRow) {
   return playerRow ? judging.listPenalties(eventId, playerRow.id) : [];
 }
@@ -364,7 +364,7 @@ export function createTournamentsRouter(io) {
         penalties: (
           staff
             ? await judging.listPenalties(event.id)
-            : await ownPenalties(event.id, players.find((p) => p.user_id === req.auth.userId && !p.dropped))
+            : await ownPenalties(event.id, players.find((p) => p.user_id === req.auth.userId))
         ).map(publicPenalty),
         players: players.map(publicPlayer),
         standings: sorted,
@@ -631,7 +631,7 @@ export function createTournamentsRouter(io) {
       const player = await db.getPlayerById(req.body?.playerId);
       if (!player || player.event_id !== event.id) return res.status(404).json({ error: "Player not found in this event." });
       const approved = await db.approveCheckIn(player.id, req.auth.userId);
-      if (!approved) return res.status(409).json({ error: "That player has dropped." });
+      if (!approved) return res.status(409).json({ error: "Check-in is closed, or that player has dropped." });
       res.json({ player: publicPlayer(approved) });
     } catch (err) {
       next(err);
@@ -647,6 +647,7 @@ export function createTournamentsRouter(io) {
       const shop = await getShopById(event.shop_id);
       const present = [...userIdsInRoom(shop.code)];
       const approved = await db.approveCheckInForUsers(event.id, present, req.auth.userId);
+      if (approved === null) return res.status(409).json({ error: "Check-in is closed." });
       res.json({ approved });
     } catch (err) {
       next(err);
@@ -788,8 +789,9 @@ export function createTournamentsRouter(io) {
       if (event.current_phase === "swiss") await advanceFromSwiss(event, res);
       else await advanceFromBracket(event, res);
       // Whatever came next (new round, top cut, done), the tables the
-      // last round used are re-assigned or free now.
-      await refreshEventTables(io, event.shop_id);
+      // last round used are re-assigned or free now. The response is
+      // already sent - a failure here is only logged.
+      await refreshEventTables(io, event.shop_id).catch((err) => console.error("[events] table refresh failed", err));
     } catch (err) {
       next(err);
     }

@@ -199,4 +199,32 @@ describe("judging", { skip: SKIP_REASON }, () => {
     await api.post(`/events/${event.id}/matches/${match.id}/override`, owner.token, { result: "player1_win" });
     assert.equal((await api.post(`/events/${event.id}/matches/${match.id}/call-judge`, p1.token)).status, 409);
   });
+
+  test("a disqualification before the start hands the spot on - and the new entrant is told", async () => {
+    const r = await api.post("/events", owner.token, {
+      shopId: shop.id, name: "Early DQ", game: "vanguard", vanguardRegion: "th", vanguardRegulation: "d_standard",
+      format: "swiss_only", maxPlayers: 4, drawRule: "double_loss",
+    });
+    const event = r.body.event;
+    for (const p of players) await api.post(`/events/${event.id}/register`, p.token);
+    await api.post(`/events/${event.id}/register`, outsider.token); // waitlist #1
+    const before = (await api.get(`/events/${event.id}`, owner.token)).body;
+    const target = before.players.find((p) => p.userId === players[0].id);
+    const dq = await api.post(`/events/${event.id}/penalties`, owner.token, { playerId: target.id, level: "disqualification", reason: "Banned list" });
+    assert.equal(dq.status, 201);
+    const after = (await api.get(`/events/${event.id}`, owner.token)).body;
+    assert.equal(after.players.find((p) => p.userId === outsider.id).entryStatus, "entered");
+    assert.ok((await kinds(outsider.token)).includes("event_promoted"));
+    const own = (await api.get(`/events/${event.id}`, players[0].token)).body.penalties;
+    assert.equal(own.length, 1, "a disqualified player still sees why");
+  });
+
+  test("two quick judge calls on one match: only the first goes through", async () => {
+    const { event, match, p1 } = await runningEvent();
+    const [a, b] = await Promise.all([
+      api.post(`/events/${event.id}/matches/${match.id}/call-judge`, p1.token),
+      api.post(`/events/${event.id}/matches/${match.id}/call-judge`, p1.token),
+    ]);
+    assert.deepEqual([a.status, b.status].sort(), [201, 429]);
+  });
 });

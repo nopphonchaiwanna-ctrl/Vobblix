@@ -458,7 +458,11 @@ io.on("connection", (socket) => {
 
     // A table hosting a match: its players + event staff speak, everyone
     // else watches (see tournament/speakers.js and eventTables.js).
-    const match = (await activeMatchTables(meta.shopDbId)).get(meta.tableId) || null;
+    const tableId = meta.tableId;
+    const match = (await activeMatchTables(meta.shopDbId)).get(tableId) || null;
+    // Moved to another table while that lookup ran - the lock we found is
+    // for the old one, so don't join anything.
+    if (meta.tableId !== tableId) return ack?.({ ok: false, reason: "moved" });
     let callRole = "speaker";
     if (match) {
       const userId = socket.user.userId;

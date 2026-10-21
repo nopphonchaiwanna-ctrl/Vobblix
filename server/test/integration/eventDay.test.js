@@ -229,4 +229,16 @@ describe("event day", { skip: SKIP_REASON }, () => {
     assert.equal((await playerRow(event.id, players[5].id)).entryStatus, "entered");
     assert.ok((await kinds(players[4].token)).includes("event_promoted"));
   });
+
+  test("waitlist numbers close up when someone in the queue leaves", async () => {
+    const event = await createEvent({ maxPlayers: 4 });
+    await registerAll(event.id, players.slice(0, 7)); // #1 = players[4], #2 = players[5], #3 = players[6]
+    assert.equal((await api.post(`/events/${event.id}/drop`, players[4].token)).status, 200);
+    assert.equal((await playerRow(event.id, players[5].id)).waitlistPosition, 1);
+    assert.equal((await playerRow(event.id, players[6].id)).waitlistPosition, 2);
+    // and after a promotion
+    assert.equal((await api.post(`/events/${event.id}/drop`, players[0].token)).status, 200);
+    assert.equal((await playerRow(event.id, players[5].id)).entryStatus, "entered");
+    assert.equal((await playerRow(event.id, players[6].id)).waitlistPosition, 1);
+  });
 });

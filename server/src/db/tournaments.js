@@ -322,6 +322,19 @@ async function inEventTx(eventId, fn) {
   }
 }
 
+/** Closes gaps in the queue (someone left / moved in): positions become 1..n in order. */
+async function renumberWaitlist(client, eventId) {
+  await client.query(
+    `UPDATE tournament_players tp SET waitlist_position = q.pos
+     FROM (
+       SELECT id, ROW_NUMBER() OVER (ORDER BY waitlist_position, registered_at) AS pos
+       FROM tournament_players WHERE event_id = $1 AND dropped = false AND entry_status = 'waitlisted'
+     ) q
+     WHERE tp.id = q.id AND tp.waitlist_position IS DISTINCT FROM q.pos`,
+    [eventId]
+  );
+}
+
 async function nextWaitlistPosition(client, eventId) {
   const { rows } = await client.query(
     `SELECT COALESCE(MAX(waitlist_position), 0) + 1 AS next FROM tournament_players WHERE event_id = $1 AND dropped = false`,
@@ -398,6 +411,7 @@ export async function dropAndPromote(playerId) {
         promoted = up[0];
       }
     }
+    if (rows[0]) await renumberWaitlist(client, event.id);
     return { dropped, promoted };
   });
 }
@@ -460,25 +474,37 @@ export async function requestCheckIn(playerId) {
   return rows[0] || null;
 }
 
+// Approvals take the event's lock and re-check it's still in check-in, so
+// one that lands while Start is running waits for it and is then refused
+// (instead of being recorded after Start already wrote that player off).
+
 export async function approveCheckIn(playerId, approvedBy) {
-  const { rows } = await pool.query(
-    `UPDATE tournament_players SET checked_in_at = COALESCE(checked_in_at, now()), checked_in_by = COALESCE(checked_in_by, $2)
-     WHERE id = $1 AND dropped = false RETURNING *`,
-    [playerId, approvedBy]
-  );
-  return rows[0] || null;
+  const player = await getPlayerById(playerId);
+  if (!player) return null;
+  return inEventTx(player.event_id, async (client, event) => {
+    if (event.status !== "check_in") return null;
+    const { rows } = await client.query(
+      `UPDATE tournament_players SET checked_in_at = COALESCE(checked_in_at, now()), checked_in_by = COALESCE(checked_in_by, $2)
+       WHERE id = $1 AND dropped = false RETURNING *`,
+      [playerId, approvedBy]
+    );
+    return rows[0] || null;
+  });
 }
 
-/** Approves every registered, non-dropped, not-yet-approved player among userIds. Returns how many. */
+/** Approves every registered, non-dropped, not-yet-approved player among userIds. Returns how many (null = check-in closed). */
 export async function approveCheckInForUsers(eventId, userIds, approvedBy) {
-  if (userIds.length === 0) return 0;
-  const { rowCount } = await pool.query(
-    `UPDATE tournament_players SET checked_in_at = now(), checked_in_by = $3
-     WHERE event_id = $1 AND user_id = ANY($2::uuid[]) AND dropped = false AND checked_in_at IS NULL
-       AND entry_status IN ('entered', 'waitlisted')`,
-    [eventId, userIds, approvedBy]
-  );
-  return rowCount;
+  return inEventTx(eventId, async (client, event) => {
+    if (event.status !== "check_in") return null;
+    if (userIds.length === 0) return 0;
+    const { rowCount } = await client.query(
+      `UPDATE tournament_players SET checked_in_at = now(), checked_in_by = $3
+       WHERE event_id = $1 AND user_id = ANY($2::uuid[]) AND dropped = false AND checked_in_at IS NULL
+         AND entry_status IN ('entered', 'waitlisted')`,
+      [eventId, userIds, approvedBy]
+    );
+    return rowCount;
+  });
 }
 
 /** At start: waitlisters filling no-show spots become entered; unapproved entrants are no-shows. */
@@ -517,6 +543,7 @@ export async function promoteWaitlistUpToLimit(eventId) {
        ) RETURNING *`,
       [eventId, free]
     );
+    await renumberWaitlist(client, eventId);
     return rows;
   });
 }
@@ -561,6 +588,7 @@ export async function startFromCheckIn(eventId, plan) {
        WHERE event_id = $1 AND entry_status = 'entered' AND dropped = false AND no_show = false AND NOT (id = ANY($2::uuid[]))`,
       [eventId, starters]
     );
+    await renumberWaitlist(client, eventId);
     await insertRoundMatches(eventId, "swiss", 1, result.pairings, client);
     if (result.byePlayerId) await markPlayersHadBye([result.byePlayerId], client);
     return { event: rows[0], ...result };
