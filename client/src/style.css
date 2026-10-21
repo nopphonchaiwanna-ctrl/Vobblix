@@ -356,15 +356,51 @@ button.white {
   justify-content: center;
   gap: 16px;
   padding: 16px;
-  width: fit-content;
-  margin: 0 auto;
 }
 
+/* The 3D shop (scene3d/ShopWorld.js) - fills whatever space is left
+   beside the chat sidebar; the renderer sizes itself to this box. */
 #game {
-  flex-shrink: 0;
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: var(--game-avail-h, 700px);
   border-radius: 12px;
   overflow: hidden;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  background: #1b2634;
+}
+
+.scene3d-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+/* CSS2DRenderer's layer for name tags - sits exactly over the canvas
+   and never eats clicks meant for the HUD or the canvas. */
+.scene3d-labels {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.name-tag {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.72);
+  border: 2px solid var(--player-color, transparent);
+  color: #f8fafc;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.scene3d-fallback {
+  padding: 24px;
+  color: var(--text);
+  max-width: 420px;
 }
 
 /* Floats over the top-left corner of the canvas - opaque panel

@@ -1,9 +1,8 @@
-import Phaser from "phaser";
 import { connectSocket, disconnectSocket, getSocket } from "./net/socket.js";
 import { initChatUI } from "./ui/chat.js";
 import { initCallUI } from "./ui/call.js";
 import { createCallManager } from "./webrtc/callManager.js";
-import ShopScene from "./scenes/ShopScene.js";
+import ShopWorld from "./scene3d/ShopWorld.js";
 import { listNotifications, markNotificationsRead, getIceServers } from "./net/api.js";
 import { login, register, me, applyForOwner, myApplication, publicShops, myShop, blockUser, unblockUser, listBlockedUsers, verifyEmail, resendVerification, forgotPassword, resetPassword } from "./net/api.js";
 import { getSavedToken, saveToken, clearToken } from "./auth/session.js";
@@ -144,38 +143,27 @@ let pendingResetToken = "";
 // change this.
 let activeMainPath = "/lobby";
 
-// The currently-running Phaser game + the WebRTC/call teardown + room id
+// The currently-running 3D shop (scene3d/ShopWorld.js) + the WebRTC/call teardown + room id
 // for the shop the player is in, if any - null whenever #game-screen
 // isn't the active screen. Needed so leaveShop() (the topbar brand,
 // navigating to a different shop, or logging out from inside a shop)
 // can cleanly tear both down instead of just hiding the DOM.
-let currentGame = null;
+let currentWorld = null;
 let currentCallTeardown = null;
 let currentShopRoomId = null;
 let currentFloor = null; // { width, height } of the shop floor while in a shop
 
-// The game canvas is a window onto the shop floor, not the whole floor:
-// as big as the space beside the chat sidebar, never bigger than the
-// floor. ShopScene's camera follows the player across the rest - a
-// canvas the size of the whole floor (up to 1300x900) used to run off
-// the bottom of the screen with nothing scrolling to the player.
-// Also sizes the chat sidebar to the same available height.
-const GAME_SIDEBAR_W = 300; // #chat-panels width in style.css
-const GAME_SCREEN_PAD = 16; // #game-screen padding and gap in style.css
-function fitGameViewport() {
-  const availWidth = window.innerWidth - GAME_SIDEBAR_W - GAME_SCREEN_PAD * 3;
+// The 3D view fills the space beside the chat sidebar; ShopWorld sizes
+// its own canvas to #game (ResizeObserver), this just tells the CSS how
+// much height is left under the topbar.
+const GAME_SCREEN_PAD = 16; // #game-screen padding in style.css
+function sizeGameScreen() {
   const availHeight = window.innerHeight - topbar.offsetHeight - GAME_SCREEN_PAD * 2;
   gameScreen.style.setProperty("--game-avail-h", `${Math.max(availHeight, 320)}px`);
-  return {
-    width: Math.round(Math.min(currentFloor.width, Math.max(availWidth, 320))),
-    height: Math.round(Math.min(currentFloor.height, Math.max(availHeight, 240))),
-  };
 }
 
 window.addEventListener("resize", () => {
-  if (!currentGame || !currentFloor) return;
-  const { width, height } = fitGameViewport();
-  currentGame.scale.resize(width, height);
+  if (currentWorld) sizeGameScreen();
 });
 // The current shop's DB id (from join-shop's ack), so the topbar's
 // Events menu item knows which shop's events to show - null whenever
@@ -927,7 +915,7 @@ registerForm.addEventListener("submit", async (e) => {
 // Shared by the topbar's Log out menu item and the "your session
 // expired" auto-logout below - works from any screen, including from
 // inside a shop (leaveShop() tears that down first instead of leaving
-// the Phaser game/call running underneath the auth screen).
+// the 3D shop/call running underneath the auth screen).
 function doLogout() {
   leaveShop();
   session = null;
@@ -1057,7 +1045,7 @@ function setupCall(callUI, chatUI) {
   };
 }
 
-// Actually joins `roomId` over the socket and spins up the Phaser game -
+// Actually joins `roomId` over the socket and spins up the 3D shop -
 // called by the /shop/:roomId route handler below, never directly.
 function enterShop(roomId) {
   joinBtn.disabled = true;
@@ -1138,38 +1126,25 @@ function enterShop(roomId) {
     topbarMenuEvents.hidden = !currentShopDbId;
     shopEventsBtn.hidden = !currentShopDbId;
 
-    // Floor size and table layout come entirely from the server (see
-    // server/src/scenes/) - the client never hardcodes a shop layout, so
-    // a new scene/event type on the server needs no client change here.
-    // The canvas is only a window onto that floor (see fitGameViewport).
+    // Floor size, table layout and the counter/board positions come
+    // entirely from the server (see server/src/scenes/) - the client never
+    // hardcodes a shop layout, so a new scene/event type on the server
+    // needs no client change here.
     currentFloor = payload.floor;
-    const viewport = fitGameViewport();
-    currentGame = new Phaser.Game({
-      type: Phaser.AUTO,
-      parent: "game",
-      width: viewport.width,
-      height: viewport.height,
-      backgroundColor: "#1b2634",
-      physics: { default: undefined },
+    sizeGameScreen();
+    currentWorld = new ShopWorld({
+      container: document.getElementById("game"),
+      socket,
+      you: payload.you,
+      players: payload.players,
+      tables: payload.tables,
+      counter: payload.counter,
+      board: payload.board,
+      floor: payload.floor,
+      theme: payload.theme,
+      chatUI,
+      callHooks: currentCallTeardown,
     });
-
-    // Added (rather than listed in the config above) so we can hand it
-    // the join payload as scene data on the very first start.
-    currentGame.scene.add(
-      "ShopScene",
-      ShopScene,
-      true,
-      {
-        you: payload.you,
-        roomId: payload.roomId,
-        players: payload.players,
-        tables: payload.tables,
-        floorWidth: payload.floor.width,
-        floorHeight: payload.floor.height,
-        chatUI,
-        callHooks: currentCallTeardown,
-      },
-    );
   });
 }
 
@@ -1179,16 +1154,16 @@ function enterShop(roomId) {
 // Tells the server explicitly via "leave-shop" (unlike disconnecting,
 // this keeps the socket itself alive, so order push notifications keep
 // working once back on the lobby - see server/src/index.js's handler
-// for it) and tears down the Phaser game + any active call instead of
+// for it) and tears down the 3D shop + any active call instead of
 // just hiding the DOM and leaving them running in the background.
 function leaveShop() {
-  if (!currentGame) return;
+  if (!currentWorld) return;
   getSocket().emit("leave-shop");
   currentCallTeardown?.destroy();
   currentCallTeardown = null;
-  currentGame.destroy(true);
+  currentWorld.destroy();
   currentFloor = null;
-  currentGame = null;
+  currentWorld = null;
   currentShopRoomId = null;
   currentShopDbId = null;
   topbarMenuEvents.hidden = true;
@@ -1348,7 +1323,7 @@ route("/shop/:roomId", ({ roomId }) => {
     navigate("/login", { replace: true });
     return;
   }
-  if (currentGame && currentShopRoomId === roomId) {
+  if (currentWorld && currentShopRoomId === roomId) {
     // Already in this shop (e.g. Back from an overlay panel that was
     // opened over it) - just make sure it's the one showing, no need to
     // rejoin anything.
@@ -1359,7 +1334,7 @@ route("/shop/:roomId", ({ roomId }) => {
     activeMainPath = `/shop/${encodeURIComponent(roomId)}`;
     return;
   }
-  if (currentGame) leaveShop(); // switching straight to a different shop
+  if (currentWorld) leaveShop(); // switching straight to a different shop
   enterShop(roomId);
 });
 
