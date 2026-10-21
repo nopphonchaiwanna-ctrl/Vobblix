@@ -23,6 +23,9 @@ const fileEnv = existsSync(envFile) ? dotenv.parse(readFileSync(envFile)) : {};
 
 export const TEST_PASSWORD = "Test1234!";
 
+/** A start time a week out - creating an event needs one in the future. */
+export const FUTURE_START = new Date(Date.now() + 7 * 86_400_000).toISOString();
+
 export function testDatabaseUrl() {
   const url = process.env.TEST_DATABASE_URL || fileEnv.TEST_DATABASE_URL;
   if (!url) return null;

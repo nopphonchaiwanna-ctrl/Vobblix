@@ -1,0 +1,31 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { parseStartsAt, isPastStart, registrationOpen } from "../../src/tournament/schedule.js";
+
+const now = new Date("2026-10-22T10:00:00.000Z");
+const future = new Date(now.getTime() + 60_000);
+const past = new Date(now.getTime() - 60_000);
+
+test("parseStartsAt: ISO string -> Date, blank -> null, anything else -> invalid", () => {
+  assert.equal(parseStartsAt("2026-11-01T06:00:00.000Z").toISOString(), "2026-11-01T06:00:00.000Z");
+  assert.equal(parseStartsAt(""), null);
+  assert.equal(parseStartsAt(null), null);
+  assert.equal(parseStartsAt(undefined), null);
+  assert.equal(parseStartsAt("tomorrow"), undefined);
+  assert.equal(parseStartsAt(12), undefined);
+});
+
+test("isPastStart: no start time never passes; the start instant itself has passed", () => {
+  assert.equal(isPastStart(null, now), false);
+  assert.equal(isPastStart(now, now), true);
+  assert.equal(isPastStart(new Date(now.getTime() + 1), now), false);
+  assert.equal(isPastStart(now.toISOString(), now), true);
+});
+
+test("registrationOpen: registration/check-in before the start time only", () => {
+  assert.equal(registrationOpen({ status: "registration", starts_at: future }, now), true);
+  assert.equal(registrationOpen({ status: "check_in", starts_at: future }, now), true);
+  assert.equal(registrationOpen({ status: "check_in", starts_at: past }, now), false);
+  assert.equal(registrationOpen({ status: "registration", starts_at: null }, now), true);
+  assert.equal(registrationOpen({ status: "swiss", starts_at: null }, now), false);
+});

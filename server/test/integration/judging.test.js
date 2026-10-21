@@ -2,7 +2,7 @@
 import { describe, test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import {
-  SKIP_REASON, resetDatabase, startServer, apiFor, createAndLogin, createPublishedShop, openCheckInAndApproveAll,
+  SKIP_REASON, resetDatabase, startServer, apiFor, createAndLogin, createPublishedShop, openCheckInAndApproveAll, FUTURE_START,
 } from "./helpers.js";
 
 describe("judging", { skip: SKIP_REASON }, () => {
@@ -31,7 +31,7 @@ describe("judging", { skip: SKIP_REASON }, () => {
 
   async function runningEvent() {
     const r = await api.post("/events", owner.token, {
-      shopId: shop.id, name: "Judged", game: "vanguard", vanguardRegion: "th", vanguardRegulation: "d_standard",
+      shopId: shop.id, startsAt: FUTURE_START, name: "Judged", game: "vanguard", vanguardRegion: "th", vanguardRegulation: "d_standard",
       format: "swiss_only", maxPlayers: 4, drawRule: "double_loss",
     });
     const event = r.body.event;
@@ -50,7 +50,7 @@ describe("judging", { skip: SKIP_REASON }, () => {
 
   test("organizer searches and adds judges; players can't judge, judges can't play", async () => {
     const r = await api.post("/events", owner.token, {
-      shopId: shop.id, name: "Staffing", game: "vanguard", vanguardRegion: "jp", vanguardRegulation: "premium",
+      shopId: shop.id, startsAt: FUTURE_START, name: "Staffing", game: "vanguard", vanguardRegion: "jp", vanguardRegulation: "premium",
       format: "swiss_only", maxPlayers: 4, drawRule: "double_loss",
     });
     const event = r.body.event;
@@ -202,7 +202,7 @@ describe("judging", { skip: SKIP_REASON }, () => {
 
   test("a disqualification before the start hands the spot on - and the new entrant is told", async () => {
     const r = await api.post("/events", owner.token, {
-      shopId: shop.id, name: "Early DQ", game: "vanguard", vanguardRegion: "th", vanguardRegulation: "d_standard",
+      shopId: shop.id, startsAt: FUTURE_START, name: "Early DQ", game: "vanguard", vanguardRegion: "th", vanguardRegulation: "d_standard",
       format: "swiss_only", maxPlayers: 4, drawRule: "double_loss",
     });
     const event = r.body.event;

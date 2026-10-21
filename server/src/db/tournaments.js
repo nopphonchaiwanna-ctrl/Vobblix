@@ -19,16 +19,17 @@ export async function createEvent({
   registrationMode = "first_come",
   vanguardRegion = null,
   vanguardRegulation = null,
+  startsAt = null,
   createdBy,
 }) {
   const { rows } = await pool.query(
     `INSERT INTO tournament_events
        (shop_id, name, game, format, configured_cut_size, draw_rule, max_players, round_time_limit_minutes,
-        registration_mode, vanguard_region, vanguard_regulation, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        registration_mode, vanguard_region, vanguard_regulation, starts_at, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
      RETURNING *`,
     [shopId, name, game, format, configuredCutSize ?? null, drawRule, maxPlayers ?? null, roundTimeLimitMinutes ?? null,
-      registrationMode, vanguardRegion, vanguardRegulation, createdBy]
+      registrationMode, vanguardRegion, vanguardRegulation, startsAt, createdBy]
   );
   return rows[0];
 }

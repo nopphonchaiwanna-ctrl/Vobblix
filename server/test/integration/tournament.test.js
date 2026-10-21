@@ -4,7 +4,7 @@
 // is deterministic even though pairings are shuffled.
 import { describe, test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { SKIP_REASON, resetDatabase, startServer, apiFor, createAndLogin, createPublishedShop, openCheckInAndApproveAll } from "./helpers.js";
+import { SKIP_REASON, resetDatabase, startServer, apiFor, createAndLogin, createPublishedShop, openCheckInAndApproveAll, FUTURE_START } from "./helpers.js";
 
 describe("tournament flow", { skip: SKIP_REASON }, () => {
   let server;
@@ -27,7 +27,7 @@ describe("tournament flow", { skip: SKIP_REASON }, () => {
 
   async function createEvent(fields) {
     const r = await api.post("/events", owner.token, {
-      shopId: shop.id,
+      shopId: shop.id, startsAt: FUTURE_START,
       game: "vanguard",
       vanguardRegion: "th",
       vanguardRegulation: "d_standard",

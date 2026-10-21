@@ -11,6 +11,7 @@ import { getShopById } from "../db/shops.js";
 import { userIdsInRoom } from "../rooms.js";
 import { startingRoster } from "../tournament/entry.js";
 import { assignTables } from "../tournament/tables.js";
+import { parseStartsAt, registrationOpen } from "../tournament/schedule.js";
 import { resolveScene } from "../scenes/index.js";
 import { refreshEventTables } from "../eventTables.js";
 import { createEventNotifier } from "../eventNotify.js";
@@ -102,6 +103,7 @@ function parseEventSettings(body) {
 }
 
 const ROUND_TIME_LIMIT_ERROR = "Round time limit must be between 1 minute and 2 days (2880 minutes).";
+const STARTS_AT_ERROR = "Choose the event's start date and time.";
 
 /** null = no limit, undefined = invalid, otherwise whole minutes. */
 function parseRoundTimeLimit(raw) {
@@ -222,6 +224,9 @@ function publicEvent(event) {
     vanguardRegulation: event.vanguard_regulation,
     lotteryDrawnAt: event.lottery_drawn_at,
     checkInOpenedAt: event.check_in_opened_at,
+    startsAt: event.starts_at ? new Date(event.starts_at).toISOString() : null,
+    // Can someone new still sign up? Closes once startsAt passes.
+    registrationOpen: registrationOpen(event, new Date()),
     status: event.status,
     currentPhase: event.current_phase,
     roundCount: event.round_count,
@@ -303,8 +308,12 @@ export function createTournamentsRouter(io) {
 
       const parsed = parseEventSettings(req.body);
       if (parsed.error) return res.status(400).json({ error: parsed.error });
+      // A new event always gets a start time (it closes registration).
+      const startsAt = parseStartsAt(req.body?.startsAt);
+      if (!startsAt) return res.status(400).json({ error: STARTS_AT_ERROR });
+      if (startsAt <= new Date()) return res.status(400).json({ error: "The start time must be in the future." });
 
-      const event = await db.createEvent({ shopId, ...parsed.fields, createdBy: req.auth.userId });
+      const event = await db.createEvent({ shopId, ...parsed.fields, startsAt, createdBy: req.auth.userId });
       res.status(201).json({ event: publicEvent(event) });
     } catch (err) {
       next(err);

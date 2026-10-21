@@ -1,7 +1,7 @@
 // Event day: waitlist, lottery, check-in, start roster, tables, pairing alerts.
 import { describe, test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { SKIP_REASON, resetDatabase, startServer, apiFor, createAndLogin, createPublishedShop, socketFor, openCheckInAndApproveAll } from "./helpers.js";
+import { SKIP_REASON, resetDatabase, startServer, apiFor, createAndLogin, createPublishedShop, socketFor, openCheckInAndApproveAll, FUTURE_START } from "./helpers.js";
 
 describe("event day", { skip: SKIP_REASON }, () => {
   let server;
@@ -23,7 +23,7 @@ describe("event day", { skip: SKIP_REASON }, () => {
 
   async function createEvent(fields = {}) {
     const r = await api.post("/events", owner.token, {
-      shopId: shop.id, name: "Day", game: "vanguard", vanguardRegion: "th", vanguardRegulation: "d_standard",
+      shopId: shop.id, startsAt: FUTURE_START, name: "Day", game: "vanguard", vanguardRegion: "th", vanguardRegulation: "d_standard",
       format: "swiss_only", maxPlayers: 4, drawRule: "double_loss", ...fields,
     });
     assert.equal(r.status, 201, JSON.stringify(r.body));
@@ -32,6 +32,25 @@ describe("event day", { skip: SKIP_REASON }, () => {
   const playerRow = async (eventId, userId) =>
     (await api.get(`/events/${eventId}`, owner.token)).body.players.find((p) => p.userId === userId);
   const kinds = async (token) => (await api.get("/notifications", token)).body.notifications.map((n) => n.kind);
+
+  test("create needs a future start time", async () => {
+    const body = {
+      shopId: shop.id, name: "Day", game: "vanguard", vanguardRegion: "th", vanguardRegulation: "d_standard",
+      format: "swiss_only", maxPlayers: 4, drawRule: "double_loss",
+    };
+    for (const startsAt of [undefined, "tomorrow"]) {
+      const r = await api.post("/events", owner.token, { ...body, startsAt });
+      assert.equal(r.status, 400);
+      assert.equal(r.body.error, "Choose the event's start date and time.");
+    }
+    const past = await api.post("/events", owner.token, { ...body, startsAt: new Date(Date.now() - 60_000).toISOString() });
+    assert.equal(past.status, 400);
+    assert.equal(past.body.error, "The start time must be in the future.");
+    const ok = await api.post("/events", owner.token, { ...body, startsAt: FUTURE_START });
+    assert.equal(ok.status, 201);
+    assert.equal(ok.body.event.startsAt, FUTURE_START);
+    assert.equal(ok.body.event.registrationOpen, true);
+  });
 
   test("first come: the 5th is waitlisted, and moves up when someone drops", async () => {
     const event = await createEvent();

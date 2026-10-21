@@ -4,7 +4,7 @@ import { describe, test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import {
   SKIP_REASON, resetDatabase, startServer, apiFor, createAndLogin, createPublishedShop, socketFor, withDb,
-  openCheckInAndApproveAll,
+  openCheckInAndApproveAll, FUTURE_START,
 } from "./helpers.js";
 
 // Resolves { timedOut: true } instead of hanging if the server never acks.
@@ -36,7 +36,7 @@ describe("event match tables", { skip: SKIP_REASON }, () => {
     await withDb((db) => db.query(`UPDATE shops SET layout_template_id = 'small' WHERE id = $1`, [shop.id])); // 4 tables
     for (let i = 1; i <= 11; i++) players.push(await createAndLogin(api, { email: `t${i}@test.local`, name: `T${i}` }));
     const r = await api.post("/events", owner.token, {
-      shopId: shop.id, name: "Tables", game: "vanguard", vanguardRegion: "th", vanguardRegulation: "d_standard",
+      shopId: shop.id, startsAt: FUTURE_START, name: "Tables", game: "vanguard", vanguardRegion: "th", vanguardRegulation: "d_standard",
       format: "swiss_only", maxPlayers: 16, drawRule: "double_loss",
     });
     event = r.body.event;

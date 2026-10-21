@@ -1,7 +1,7 @@
 // Event edit / cancel and the status guards on every event action.
 import { describe, test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { SKIP_REASON, resetDatabase, startServer, apiFor, createAndLogin, createPublishedShop, openCheckInAndApproveAll } from "./helpers.js";
+import { SKIP_REASON, resetDatabase, startServer, apiFor, createAndLogin, createPublishedShop, openCheckInAndApproveAll, FUTURE_START } from "./helpers.js";
 
 describe("event edit + cancel", { skip: SKIP_REASON }, () => {
   let server;
@@ -9,7 +9,7 @@ describe("event edit + cancel", { skip: SKIP_REASON }, () => {
   let owner;
   let player;
   let shop;
-  const base = { name: "Friday Swiss", game: "vanguard", vanguardRegion: "th", vanguardRegulation: "d_standard", format: "swiss_only", maxPlayers: 4, drawRule: "double_loss", roundTimeLimitMinutes: 50 };
+  const base = { name: "Friday Swiss", startsAt: FUTURE_START, game: "vanguard", vanguardRegion: "th", vanguardRegulation: "d_standard", format: "swiss_only", maxPlayers: 4, drawRule: "double_loss", roundTimeLimitMinutes: 50 };
 
   before(async () => {
     await resetDatabase();
