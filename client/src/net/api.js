@@ -343,3 +343,25 @@ export function savePushSubscription(token, subscription) {
 export function setEventPushConsent(token, eventId, granted) {
   return request(`/events/${eventId}/push-consent`, { method: "PUT", token, body: JSON.stringify({ granted }) });
 }
+
+// ---------- Event day: entry, check-in, alerts, staff ----------
+
+const post = (path, token, body) => request(path, { method: "POST", token, body: body === undefined ? undefined : JSON.stringify(body) });
+
+export const runEventDraw = (token, eventId) => post(`/events/${eventId}/draw`, token);
+export const openEventCheckIn = (token, eventId) => post(`/events/${eventId}/check-in/open`, token);
+export const requestEventCheckIn = (token, eventId) => post(`/events/${eventId}/check-in`, token);
+export const approveEventCheckIn = (token, eventId, playerId) => post(`/events/${eventId}/check-in/approve`, token, { playerId });
+export const autoEventCheckIn = (token, eventId) => post(`/events/${eventId}/check-in/auto`, token);
+export const notifyEventPairings = (token, eventId) => post(`/events/${eventId}/notify-pairings`, token);
+
+export const searchEventStaff = (token, eventId, q) => request(`/events/${eventId}/staff/search?q=${encodeURIComponent(q)}`, { token });
+export const addEventJudge = (token, eventId, userId) => post(`/events/${eventId}/judges`, token, { userId });
+export const removeEventJudge = (token, eventId, userId) => request(`/events/${eventId}/judges/${userId}`, { method: "DELETE", token });
+
+export const callEventJudge = (token, eventId, matchId) => post(`/events/${eventId}/matches/${matchId}/call-judge`, token);
+export const claimJudgeCall = (token, eventId, callId) => post(`/events/${eventId}/judge-calls/${callId}/claim`, token);
+export const resolveJudgeCall = (token, eventId, callId) => post(`/events/${eventId}/judge-calls/${callId}/resolve`, token);
+
+export const issuePenalty = (token, eventId, fields) => post(`/events/${eventId}/penalties`, token, fields);
+export const decidePenalty = (token, eventId, penaltyId, decision) => post(`/events/${eventId}/penalties/${penaltyId}/${decision}`, token);

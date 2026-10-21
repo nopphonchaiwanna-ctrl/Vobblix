@@ -136,6 +136,9 @@ describe("event day", { skip: SKIP_REASON }, () => {
     const inShop = await socketFor(server, players[1].token);
     try {
       await new Promise((resolve) => inShop.emit("join-shop", { roomId: "eventday" }, resolve));
+      const staffView = (await api.get(`/events/${event.id}`, owner.token)).body;
+      assert.deepEqual(staffView.inShopUserIds, [players[1].id], "the organizer sees who's in the shop");
+      assert.equal((await api.get(`/events/${event.id}`, players[0].token)).body.inShopUserIds, undefined);
       const r = await api.post(`/events/${event.id}/check-in/auto`, owner.token);
       assert.equal(r.status, 200, JSON.stringify(r.body));
       assert.equal(r.body.approved, 1);

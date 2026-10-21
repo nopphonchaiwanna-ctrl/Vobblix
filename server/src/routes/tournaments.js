@@ -348,10 +348,13 @@ export function createTournamentsRouter(io) {
       const staff = myRole === "organizer" || myRole === "judge";
       const judges = (await judging.listJudges(event.id)).map((j) => ({ userId: j.user_id, displayName: j.display_name }));
 
+      const shopCode = (await getShopById(event.shop_id))?.code ?? null;
       res.json({
         event: publicEvent(event),
         // The shop's lobby code - "Go to table" / "Watch" enter it first if needed.
-        shopCode: (await getShopById(event.shop_id))?.code ?? null,
+        shopCode,
+        // Staff: who's standing in the shop right now (check-in "in shop" badges).
+        ...(staff && shopCode ? { inShopUserIds: [...userIdsInRoom(shopCode)] } : {}),
         myRole,
         // Did this user answer "alerts for this event?" - null = not asked yet.
         myPushConsent: await pushStore.getConsent(event.id, req.auth.userId),

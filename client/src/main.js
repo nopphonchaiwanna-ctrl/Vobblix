@@ -182,7 +182,7 @@ const ordersPanel = initOrdersPanel({
   orderThread,
   onBack: returnToMainScreen,
 });
-const eventsPanel = initEventsPanel({ getToken, getUserId, onBack: returnToMainScreen });
+const eventsPanel = initEventsPanel({ getToken, getUserId, onBack: returnToMainScreen, goToMatch, watchTable });
 const decksPanel = initDecksPanel({ getToken, onBack: returnToMainScreen });
 const ownerDashboard = initOwnerDashboard({
   getToken,
