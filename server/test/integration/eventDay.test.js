@@ -1,7 +1,7 @@
 // Event day: waitlist, lottery, check-in, start roster, tables, pairing alerts.
 import { describe, test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { SKIP_REASON, resetDatabase, startServer, apiFor, createAndLogin, createPublishedShop } from "./helpers.js";
+import { SKIP_REASON, resetDatabase, startServer, apiFor, createAndLogin, createPublishedShop, socketFor, openCheckInAndApproveAll } from "./helpers.js";
 
 describe("event day", { skip: SKIP_REASON }, () => {
   let server;
@@ -73,5 +73,89 @@ describe("event day", { skip: SKIP_REASON }, () => {
   test("draw on a first-come event is refused", async () => {
     const event = await createEvent();
     assert.equal((await api.post(`/events/${event.id}/draw`, owner.token)).status, 400);
+  });
+
+  async function registerAll(eventId, list) {
+    for (const p of list) assert.equal((await api.post(`/events/${eventId}/register`, p.token)).status, 201);
+  }
+
+  test("start needs check-in, and pairs only approved players", async () => {
+    const event = await createEvent();
+    await registerAll(event.id, players.slice(0, 4));
+    const early = await api.post(`/events/${event.id}/start`, owner.token);
+    assert.equal(early.status, 409);
+    assert.equal(early.body.error, "Open check-in first.");
+    assert.equal((await api.post(`/events/${event.id}/check-in/open`, owner.token)).status, 200);
+    assert.equal((await api.post(`/events/${event.id}/check-in`, players[0].token)).status, 200);
+    assert.ok((await playerRow(event.id, players[0].id)).checkInRequestedAt);
+    for (const p of players.slice(0, 3)) {
+      const row = await playerRow(event.id, p.id);
+      assert.equal((await api.post(`/events/${event.id}/check-in/approve`, owner.token, { playerId: row.id })).status, 200);
+    }
+    const start = await api.post(`/events/${event.id}/start`, owner.token);
+    assert.equal(start.status, 200, JSON.stringify(start.body));
+    const { body } = await api.get(`/events/${event.id}`, owner.token);
+    const paired = new Set(body.currentRoundMatches.flatMap((m) => [m.player1Id, m.player2Id]).filter(Boolean));
+    const noShow = body.players.find((p) => p.userId === players[3].id);
+    assert.equal(noShow.noShow, true);
+    assert.ok(!paired.has(noShow.id));
+    assert.equal(paired.size, 3);
+  });
+
+  test("a no-show's spot goes to an approved waitlister", async () => {
+    const event = await createEvent();
+    await registerAll(event.id, players.slice(0, 5)); // 5th is waitlisted
+    await api.post(`/events/${event.id}/check-in/open`, owner.token);
+    const { body } = await api.get(`/events/${event.id}`, owner.token);
+    for (const p of body.players.filter((x) => x.userId !== players[0].id)) {
+      await api.post(`/events/${event.id}/check-in/approve`, owner.token, { playerId: p.id });
+    }
+    assert.equal((await api.post(`/events/${event.id}/start`, owner.token)).status, 200);
+    const after = (await api.get(`/events/${event.id}`, owner.token)).body;
+    const paired = new Set(after.currentRoundMatches.flatMap((m) => [m.player1Id, m.player2Id]).filter(Boolean));
+    assert.ok(paired.has(after.players.find((p) => p.userId === players[4].id).id), "the waitlister plays");
+    assert.ok(!paired.has(after.players.find((p) => p.userId === players[0].id).id), "the no-show doesn't");
+  });
+
+  test("open check-in on a lottery waits for the draw; newcomers then join the waitlist", async () => {
+    const event = await createEvent({ registrationMode: "lottery" });
+    await registerAll(event.id, players.slice(0, 2));
+    const r = await api.post(`/events/${event.id}/check-in/open`, owner.token);
+    assert.equal(r.status, 409);
+    assert.equal(r.body.error, "Run the draw before opening check-in.");
+    await api.post(`/events/${event.id}/draw`, owner.token);
+    assert.equal((await api.post(`/events/${event.id}/check-in/open`, owner.token)).status, 200);
+    const late = await api.post(`/events/${event.id}/register`, players[5].token);
+    assert.equal(late.body.player.entryStatus, "waitlisted");
+  });
+
+  test("auto check-in approves exactly the players standing in the shop", async () => {
+    const event = await createEvent();
+    await registerAll(event.id, players.slice(0, 3));
+    await api.post(`/events/${event.id}/check-in/open`, owner.token);
+    const inShop = await socketFor(server, players[1].token);
+    try {
+      await new Promise((resolve) => inShop.emit("join-shop", { roomId: "eventday" }, resolve));
+      const r = await api.post(`/events/${event.id}/check-in/auto`, owner.token);
+      assert.equal(r.status, 200, JSON.stringify(r.body));
+      assert.equal(r.body.approved, 1);
+      assert.ok((await playerRow(event.id, players[1].id)).checkedInAt);
+      assert.equal((await playerRow(event.id, players[0].id)).checkedInAt, null);
+    } finally {
+      inShop.close();
+    }
+  });
+
+  test("start twice -> one round 1", async () => {
+    const event = await createEvent();
+    await registerAll(event.id, players.slice(0, 4));
+    await openCheckInAndApproveAll(api, owner.token, event.id);
+    const [a, b] = await Promise.all([
+      api.post(`/events/${event.id}/start`, owner.token),
+      api.post(`/events/${event.id}/start`, owner.token),
+    ]);
+    assert.deepEqual([a.status, b.status].sort(), [200, 409]);
+    const { body } = await api.get(`/events/${event.id}`, owner.token);
+    assert.equal(body.currentRoundMatches.length, 2);
   });
 });

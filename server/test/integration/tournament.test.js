@@ -4,7 +4,7 @@
 // is deterministic even though pairings are shuffled.
 import { describe, test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { SKIP_REASON, resetDatabase, startServer, apiFor, createAndLogin, createPublishedShop } from "./helpers.js";
+import { SKIP_REASON, resetDatabase, startServer, apiFor, createAndLogin, createPublishedShop, openCheckInAndApproveAll } from "./helpers.js";
 
 describe("tournament flow", { skip: SKIP_REASON }, () => {
   let server;
@@ -75,6 +75,7 @@ describe("tournament flow", { skip: SKIP_REASON }, () => {
 
   async function registerAndStart(event, field) {
     for (const p of field) assert.equal((await api.post(`/events/${event.id}/register`, p.token)).status, 201);
+    await openCheckInAndApproveAll(api, owner.token, event.id);
     const start = await api.post(`/events/${event.id}/start`, owner.token);
     assert.equal(start.status, 200, JSON.stringify(start.body));
     return start.body;
@@ -84,6 +85,7 @@ describe("tournament flow", { skip: SKIP_REASON }, () => {
     const event = await createEvent({ name: "Swiss 5" });
     for (const p of players.slice(0, 5)) assert.equal((await api.post(`/events/${event.id}/register`, p.token)).status, 201);
 
+    await openCheckInAndApproveAll(api, owner.token, event.id);
     const start = await api.post(`/events/${event.id}/start`, owner.token);
     assert.equal(start.status, 200);
     assert.equal(start.body.event.roundCount, 3);
@@ -110,6 +112,7 @@ describe("tournament flow", { skip: SKIP_REASON }, () => {
   test("Swiss + top 4 cut, 8 players: bracket down to one champion", async () => {
     const event = await createEvent({ name: "Cut 8", format: "swiss_cut", configuredCutSize: 4 });
     for (const p of players) await api.post(`/events/${event.id}/register`, p.token);
+    await openCheckInAndApproveAll(api, owner.token, event.id);
     const start = await api.post(`/events/${event.id}/start`, owner.token);
     assert.equal(start.body.event.cutEnabled, true);
 
@@ -279,6 +282,7 @@ describe("tournament flow", { skip: SKIP_REASON }, () => {
   test("too few players for the cut falls back to Swiss only", async () => {
     const event = await createEvent({ name: "Small cut", format: "swiss_cut", configuredCutSize: 4 });
     for (const p of players.slice(0, 5)) await api.post(`/events/${event.id}/register`, p.token);
+    await openCheckInAndApproveAll(api, owner.token, event.id);
     const start = await api.post(`/events/${event.id}/start`, owner.token);
     assert.equal(start.body.event.cutEnabled, false);
     assert.ok(start.body.cutFallbackMessage);
@@ -287,6 +291,7 @@ describe("tournament flow", { skip: SKIP_REASON }, () => {
   test("disputed results wait for the organizer's override", async () => {
     const event = await createEvent({ name: "Dispute" });
     for (const p of players.slice(0, 2)) await api.post(`/events/${event.id}/register`, p.token);
+    await openCheckInAndApproveAll(api, owner.token, event.id);
     await api.post(`/events/${event.id}/start`, owner.token);
     const { body } = await api.get(`/events/${event.id}`, owner.token);
     const m = body.currentRoundMatches[0];

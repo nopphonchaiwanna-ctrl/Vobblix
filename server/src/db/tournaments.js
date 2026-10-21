@@ -51,7 +51,7 @@ export async function startEvent(eventId, { roundCount, cutEnabled, effectiveCut
     `UPDATE tournament_events
      SET status = 'swiss', current_phase = 'swiss', current_round = 1,
          round_count = $2, cut_enabled = $3, effective_cut_size = $4, started_at = now()
-     WHERE id = $1
+     WHERE id = $1 AND status = 'check_in'
      RETURNING *`,
     [eventId, roundCount, cutEnabled, effectiveCutSize ?? null]
   );
@@ -437,4 +437,59 @@ export async function countEnteredPlayers(eventId) {
     [eventId]
   );
   return rows[0].count;
+}
+
+// ---------- Event day: check-in ----------
+
+/** registration -> check_in, once. null if the event wasn't in registration. */
+export async function openCheckIn(eventId) {
+  const { rows } = await pool.query(
+    `UPDATE tournament_events SET status = 'check_in', check_in_opened_at = now()
+     WHERE id = $1 AND status = 'registration' RETURNING *`,
+    [eventId]
+  );
+  return rows[0] || null;
+}
+
+export async function requestCheckIn(playerId) {
+  const { rows } = await pool.query(
+    `UPDATE tournament_players SET check_in_requested_at = COALESCE(check_in_requested_at, now())
+     WHERE id = $1 RETURNING *`,
+    [playerId]
+  );
+  return rows[0] || null;
+}
+
+export async function approveCheckIn(playerId, approvedBy) {
+  const { rows } = await pool.query(
+    `UPDATE tournament_players SET checked_in_at = COALESCE(checked_in_at, now()), checked_in_by = COALESCE(checked_in_by, $2)
+     WHERE id = $1 AND dropped = false RETURNING *`,
+    [playerId, approvedBy]
+  );
+  return rows[0] || null;
+}
+
+/** Approves every registered, non-dropped, not-yet-approved player among userIds. Returns how many. */
+export async function approveCheckInForUsers(eventId, userIds, approvedBy) {
+  if (userIds.length === 0) return 0;
+  const { rowCount } = await pool.query(
+    `UPDATE tournament_players SET checked_in_at = now(), checked_in_by = $3
+     WHERE event_id = $1 AND user_id = ANY($2::uuid[]) AND dropped = false AND checked_in_at IS NULL
+       AND entry_status IN ('entered', 'waitlisted')`,
+    [eventId, userIds, approvedBy]
+  );
+  return rowCount;
+}
+
+/** At start: waitlisters filling no-show spots become entered; unapproved entrants are no-shows. */
+export async function applyStartingRoster(eventId, { starterIds, noShowIds }) {
+  await pool.query(
+    `UPDATE tournament_players SET entry_status = 'entered', waitlist_position = NULL
+     WHERE event_id = $1 AND id = ANY($2::uuid[]) AND entry_status = 'waitlisted'`,
+    [eventId, starterIds]
+  );
+  await pool.query(`UPDATE tournament_players SET no_show = true WHERE event_id = $1 AND id = ANY($2::uuid[])`, [
+    eventId,
+    noShowIds,
+  ]);
 }

@@ -1,7 +1,7 @@
 // Event edit / cancel and the status guards on every event action.
 import { describe, test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { SKIP_REASON, resetDatabase, startServer, apiFor, createAndLogin, createPublishedShop } from "./helpers.js";
+import { SKIP_REASON, resetDatabase, startServer, apiFor, createAndLogin, createPublishedShop, openCheckInAndApproveAll } from "./helpers.js";
 
 describe("event edit + cancel", { skip: SKIP_REASON }, () => {
   let server;
@@ -81,6 +81,7 @@ describe("event edit + cancel", { skip: SKIP_REASON }, () => {
     const event = await newEvent({ maxPlayers: 8 });
     await api.post(`/events/${event.id}/register`, player.token);
     await api.post(`/events/${event.id}/register`, owner.token);
+    await openCheckInAndApproveAll(api, owner.token, event.id);
     assert.equal((await api.post(`/events/${event.id}/start`, owner.token)).status, 200);
     const r = await api.patch(`/events/${event.id}`, owner.token, { name: "Renamed", roundTimeLimitMinutes: 30, format: "swiss_cut", maxPlayers: 64 });
     assert.equal(r.status, 200);
@@ -94,6 +95,7 @@ describe("event edit + cancel", { skip: SKIP_REASON }, () => {
     const event = await newEvent({ maxPlayers: 8 });
     await api.post(`/events/${event.id}/register`, player.token);
     await api.post(`/events/${event.id}/register`, owner.token);
+    await openCheckInAndApproveAll(api, owner.token, event.id);
     await api.post(`/events/${event.id}/start`, owner.token);
 
     assert.equal((await api.post(`/events/${event.id}/cancel`, player.token)).status, 403);

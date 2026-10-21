@@ -155,3 +155,8 @@ export function voiceCountAtTable(roomId, tableId) {
 export function videoCountAtTable(roomId, tableId) {
   return listPlayers(roomId).filter((p) => p.tableId === tableId && p.videoOn).length;
 }
+
+/** Account ids currently standing in a shop room - event auto check-in uses this. */
+export function userIdsInRoom(roomId) {
+  return new Set(listPlayers(roomId).map((p) => p.userId));
+}

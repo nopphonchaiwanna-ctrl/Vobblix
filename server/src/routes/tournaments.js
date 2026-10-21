@@ -8,6 +8,8 @@
 import { Router } from "express";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { getShopById } from "../db/shops.js";
+import { userIdsInRoom } from "../rooms.js";
+import { startingRoster } from "../tournament/entry.js";
 import * as db from "../db/tournaments.js";
 import { createNotification, publicNotification } from "../db/notifications.js";
 import {
@@ -44,6 +46,15 @@ const VANGUARD_REGULATIONS = ["premium", "d_standard"];
 // Statuses where rounds are being played - results can be reported,
 // overridden and advanced only then.
 const RUNNING_STATUSES = ["swiss", "bracket"];
+
+/**
+ * Who is actually playing: holds a spot, showed up (or the event
+ * predates check-in), and hasn't dropped. Waitlisters who never got in
+ * and no-shows stay on the event's player list but never pair or rank.
+ */
+function isCompeting(p) {
+  return p.entry_status === "entered" && !p.no_show && !p.dropped;
+}
 
 /**
  * Validates an event's settings from a request body - shared by create
@@ -297,7 +308,7 @@ export function createTournamentsRouter(io) {
       if (!event) return res.status(404).json({ error: "Event not found." });
 
       const players = await db.getPlayersForEvent(event.id);
-      const activePlayers = players.filter((p) => !p.dropped);
+      const activePlayers = players.filter(isCompeting);
       const swissMatches = await db.getAllMatchesForEvent(event.id, "swiss");
       const { standings } = computeSwissStandings(activePlayers, swissMatches, event.draw_rule);
       const sorted = sortStandings(standings);
@@ -480,26 +491,102 @@ export function createTournamentsRouter(io) {
 
   // ---------- Start (closes registration, generates round 1) ----------
 
+  // ---------- Check-in (event day) ----------
+
+  tournamentsRouter.post("/:id/check-in/open", async (req, res, next) => {
+    try {
+      const event = await requireEventOwnerOrAdmin(req, res, req.params.id);
+      if (!event) return;
+      if (event.registration_mode === "lottery" && !event.lottery_drawn_at) {
+        return res.status(409).json({ error: "Run the draw before opening check-in." });
+      }
+      const opened = await db.openCheckIn(event.id);
+      if (!opened) return res.status(409).json({ error: "Check-in can only open while registration is open." });
+      res.json({ event: publicEvent(opened) });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  tournamentsRouter.post("/:id/check-in", async (req, res, next) => {
+    try {
+      const event = await db.getEventById(req.params.id);
+      if (!event) return res.status(404).json({ error: "Event not found." });
+      if (event.status !== "check_in") return res.status(409).json({ error: "Check-in isn't open." });
+      const player = await db.getPlayerByEventAndUser(event.id, req.auth.userId);
+      if (!player || player.dropped) return res.status(404).json({ error: "You're not registered for this event." });
+      if (player.entry_status === "pending_draw") return res.status(409).json({ error: "Wait for the draw." });
+      res.json({ player: publicPlayer(await db.requestCheckIn(player.id)) });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  tournamentsRouter.post("/:id/check-in/approve", async (req, res, next) => {
+    try {
+      const event = await requireEventOwnerOrAdmin(req, res, req.params.id);
+      if (!event) return;
+      if (event.status !== "check_in") return res.status(409).json({ error: "Check-in isn't open." });
+      const player = await db.getPlayerById(req.body?.playerId);
+      if (!player || player.event_id !== event.id) return res.status(404).json({ error: "Player not found in this event." });
+      const approved = await db.approveCheckIn(player.id, req.auth.userId);
+      if (!approved) return res.status(409).json({ error: "That player has dropped." });
+      res.json({ player: publicPlayer(approved) });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // Everyone registered who is standing in this event's 3D shop right now.
+  tournamentsRouter.post("/:id/check-in/auto", async (req, res, next) => {
+    try {
+      const event = await requireEventOwnerOrAdmin(req, res, req.params.id);
+      if (!event) return;
+      if (event.status !== "check_in") return res.status(409).json({ error: "Check-in isn't open." });
+      const shop = await getShopById(event.shop_id);
+      const present = [...userIdsInRoom(shop.code)];
+      const approved = await db.approveCheckInForUsers(event.id, present, req.auth.userId);
+      res.json({ approved });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // ---------- Start (closes check-in, generates round 1) ----------
+
   tournamentsRouter.post("/:id/start", async (req, res, next) => {
     try {
       const event = await requireEventOwnerOrAdmin(req, res, req.params.id);
       if (!event) return;
-      if (event.status !== "registration") {
+      if (event.status === "registration") return res.status(409).json({ error: "Open check-in first." });
+      if (event.status !== "check_in") {
         return res.status(409).json({ error: "This event has already been started." });
       }
 
-      const players = (await db.getPlayersForEvent(event.id)).filter((p) => !p.dropped);
-      if (players.length < 2) {
-        return res.status(400).json({ error: "Need at least 2 registered players to start." });
+      const all = (await db.getPlayersForEvent(event.id)).filter((p) => !p.dropped);
+      const toRoster = (p) => ({ id: p.id, approved: !!p.checked_in_at, dropped: p.dropped, waitlistPosition: p.waitlist_position });
+      const { starters, noShows } = startingRoster({
+        entered: all.filter((p) => p.entry_status === "entered").map(toRoster),
+        waitlisted: all.filter((p) => p.entry_status === "waitlisted").map(toRoster),
+        maxPlayers: event.max_players,
+      });
+      if (starters.length < 2) {
+        return res.status(400).json({ error: "Need at least 2 checked-in players to start." });
       }
+      const starterSet = new Set(starters);
+      const players = all.filter((p) => starterSet.has(p.id));
 
       const roundCount = computeRoundCount(players.length);
       const eligibility = resolveCutEligibility(event.format, players.length, event.configured_cut_size);
 
+      // Guarded on status = 'check_in': of two starts at once, one wins
+      // and the other stops here before any round is created.
       const updatedEvent = await db.startEvent(event.id, {
         roundCount,
         cutEnabled: eligibility.cutEnabled,
       });
+      if (!updatedEvent) return res.status(409).json({ error: "This event has already been started." });
+      await db.applyStartingRoster(event.id, { starterIds: starters, noShowIds: noShows });
 
       const pairingInput = players.map((p) => ({
         id: p.id,
@@ -614,7 +701,7 @@ export function createTournamentsRouter(io) {
 }
 
 async function advanceFromSwiss(event, res) {
-  const players = (await db.getPlayersForEvent(event.id)).filter((p) => !p.dropped);
+  const players = (await db.getPlayersForEvent(event.id)).filter(isCompeting);
   const allSwissMatches = await db.getAllMatchesForEvent(event.id, "swiss");
   const { standings, opponentIdsByPlayer } = computeSwissStandings(players, allSwissMatches, event.draw_rule);
 
@@ -644,7 +731,10 @@ async function advanceFromSwiss(event, res) {
     return res.json({ event: publicEvent(completed), finalStandings: sorted });
   }
 
-  const totalRegistered = (await db.getPlayersForEvent(event.id)).length;
+  // Everyone who started (incl. later drops) - not waitlisters or no-shows.
+  const totalRegistered = (await db.getPlayersForEvent(event.id)).filter(
+    (p) => p.entry_status === "entered" && !p.no_show
+  ).length;
   const cutResult = resolveCutRoster(sorted, event.configured_cut_size, totalRegistered);
   const qualifiedIds = cutResult.qualified.map((p) => p.id);
   const pairings = generateBracketRound1(qualifiedIds, cutResult.cutSize);

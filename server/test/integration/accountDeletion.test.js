@@ -3,8 +3,7 @@
 import { describe, test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import {
-  SKIP_REASON, resetDatabase, startServer, apiFor, createAndLogin, createPublishedShop, socketFor, joinShop, TEST_PASSWORD,
-} from "./helpers.js";
+  SKIP_REASON, resetDatabase, startServer, apiFor, createAndLogin, createPublishedShop, socketFor, joinShop, TEST_PASSWORD, openCheckInAndApproveAll } from "./helpers.js";
 
 describe("account deletion + join-shop", { skip: SKIP_REASON }, () => {
   let server;
@@ -32,6 +31,7 @@ describe("account deletion + join-shop", { skip: SKIP_REASON }, () => {
     pastEvent = (await ev({ name: "Past" })).body.event;
     await api.post(`/events/${pastEvent.id}/register`, buyer.token);
     await api.post(`/events/${pastEvent.id}/register`, owner.token);
+    await openCheckInAndApproveAll(api, owner.token, pastEvent.id);
     await api.post(`/events/${pastEvent.id}/start`, owner.token);
     openEvent = (await ev({ name: "Upcoming" })).body.event;
     await api.post(`/events/${openEvent.id}/register`, buyer.token);

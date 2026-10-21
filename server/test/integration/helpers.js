@@ -218,3 +218,19 @@ export async function joinShop(server, token, roomId) {
     socket.close();
   }
 }
+
+/**
+ * Event day (migration 020): an event only starts from check-in, with
+ * the players the organizer approved. Opens check-in and approves every
+ * registered (entered or waitlisted) player - for tests that are about
+ * what happens after the start.
+ */
+export async function openCheckInAndApproveAll(api, ownerToken, eventId) {
+  const open = await api.post(`/events/${eventId}/check-in/open`, ownerToken);
+  if (open.status !== 200) throw new Error(`open check-in: ${open.status} ${JSON.stringify(open.body)}`);
+  const { body } = await api.get(`/events/${eventId}`, ownerToken);
+  for (const p of body.players.filter((x) => !x.dropped)) {
+    const r = await api.post(`/events/${eventId}/check-in/approve`, ownerToken, { playerId: p.id });
+    if (r.status !== 200) throw new Error(`approve: ${r.status} ${JSON.stringify(r.body)}`);
+  }
+}
