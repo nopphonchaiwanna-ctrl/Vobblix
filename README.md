@@ -522,6 +522,44 @@ npm run dev:server
 npm run dev:client
 ```
 
+## Events (tournaments)
+
+A shop's owner (or an admin) organizes events: Swiss rounds with an
+optional top-cut bracket (`server/src/tournament/swiss.js`, `bracket.js`).
+The event day flow (design: `docs/superpowers/specs/2026-10-21-event-day-design.md`):
+
+1. **Registration** - first come (then a waitlist), or a **lottery** the
+   organizer runs (`tournament/entry.js`). Vanguard events also set the
+   card pool (TH / JP) and regulation (Premium / D-Standard). A drop
+   before the start hands the spot to the next waitlister.
+2. **Check-in** - the organizer opens it; players ask to check in and the
+   organizer approves them, or presses **auto check-in** to approve
+   everyone standing in the shop's 3D room right now. Start pairs only
+   approved players; no-show spots go to approved waitlisters in order.
+3. **Rounds** - every match gets a table number (`tournament/tables.js`):
+   the shop's real tables for the top pairs, **online tables** (a call
+   with no spot on the floor, id `event:<eventId>:t<n>`) after that.
+   "Go to table" walks the player there and joins the call. While a
+   round runs, only the two players + the organizer + judges can talk or
+   show video at that table; anyone else can **watch** as a spectator
+   (`tournament/speakers.js`, `eventTables.js`) - enforced by the server
+   and by the players' own clients (`client/src/webrtc/speakers.js`).
+4. **Judges** - the organizer adds judges per event. Players can **call a
+   judge** (60 s cooldown, timed with the database's clock); the first
+   judge to take a call owns it. Judges can give **penalties** (warning,
+   match loss for the current round, disqualification) - match losses and
+   DQs from a judge wait for the organizer, who alone changes results.
+5. **Alerts** - each event asks once whether you want alerts; with a yes
+   (and VAPID keys configured - `docs/deploy.md`), pairings, waitlist
+   spots, judge calls and penalties also arrive as Web Push
+   (`services/push.js`, `client/public/sw.js`). The in-site bell always
+   gets them.
+
+Views: players get a 2-column dashboard, organizers and judges a step
+bar + action bar + tabs (`client/src/ui/events/`). Known limit: two events
+running at the same time in one shop share table numbers - the
+earlier-started event keeps the in-shop tables.
+
 ## The 3D shop
 
 `client/src/scene3d/ShopWorld.js` owns the WebGL renderer, the room,
