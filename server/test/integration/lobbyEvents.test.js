@@ -65,6 +65,13 @@ describe("lobby events", { skip: SKIP_REASON }, () => {
     assert.deepEqual(got.sort(), [open.name, checkIn.name, live.name].sort());
   });
 
+  test("the ownerless default room isn't listed, same as Published shops", async () => {
+    const admin = { token: await api.login("admin@test.local") };
+    const room = await withDb(async (db) => (await db.query("SELECT id FROM shops WHERE code = 'default'")).rows[0]);
+    await createEvent({ owner: admin, shop: room }, "Room Event");
+    assert.deepEqual(await upcoming("?q=Room%20Event"), []);
+  });
+
   test("sorts live first, then soonest start, then undated", async () => {
     const later = await createEvent(dragon, "Ord Later");
     const sooner = await createEvent(dragon, "Ord Sooner");

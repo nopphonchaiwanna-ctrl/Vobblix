@@ -8,7 +8,7 @@ test("formatStartsAt: weekday, day, month and 24h time; Date TBA without one", (
 });
 
 test("datetime-local values round-trip to the same instant", () => {
-  const iso = "2026-11-01T09:30:00.000Z";
+  const iso = "2026-11-10T09:30:00.000Z"; // no DST change that night anywhere common
   assert.match(toLocalInputValue(iso), /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
   assert.equal(fromLocalInputValue(toLocalInputValue(iso)), iso);
   assert.equal(fromLocalInputValue(""), null);

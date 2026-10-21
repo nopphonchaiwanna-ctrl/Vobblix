@@ -627,6 +627,7 @@ export async function listUpcomingEvents({ q = null, game = null, window = null,
             me.dropped AS my_dropped, me.no_show AS my_no_show
      FROM tournament_events e
      JOIN shops s ON s.id = e.shop_id AND s.status = 'published'
+     JOIN users owner ON owner.id = s.owner_user_id -- same shops as listPublishedShops (no ownerless default room)
      LEFT JOIN (
        SELECT event_id, COUNT(*) AS entered_count
        FROM tournament_players
