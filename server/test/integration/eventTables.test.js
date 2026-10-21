@@ -54,6 +54,7 @@ describe("event match tables", { skip: SKIP_REASON }, () => {
     sockets.push(s);
     const ack = await emit(s, "join-shop", { roomId: "tables" });
     assert.ok(!ack.error, ack.error);
+    s.shopTables = ack.tables;
     return s;
   }
 
@@ -63,32 +64,33 @@ describe("event match tables", { skip: SKIP_REASON }, () => {
     return body.currentRoundMatches.find((m) => m.player1Id === me.id || m.player2Id === me.id);
   }
 
-  test("a player goes to their in-shop table and speaks; a bystander there only watches", async () => {
+  test("a match plays at an online table; the shop's own tables stay free", async () => {
     let player = null;
     for (const p of players.slice(0, 10)) {
       if ((await matchOf(p.id)).tableNumber === 1) { player = p; break; }
     }
     const ps = await enterShop(player.token);
     const go = await emit(ps, "go-to-match", { eventId: event.id });
-    assert.equal(go.online, false);
-    ps.emit("move", { x: go.x, y: go.y });
-    await new Promise((r) => setTimeout(r, 100));
+    assert.equal(go.online, true);
+    assert.equal(go.tableId, `event:${event.id}:t1`);
     assert.ok(!(await emit(ps, "join-table", { tableId: go.tableId }))?.error);
     const call = await emit(ps, "join-call", {});
     assert.equal(call.ok, true);
     assert.equal(call.role, "speaker");
     assert.ok(call.speakerUserIds.includes(player.id));
 
+    // Someone at the shop's first real table talks freely - no event owns it.
     const bystander = players[10];
     const bs = await enterShop(bystander.token);
-    bs.emit("move", { x: go.x, y: go.y });
+    const floorTable = bs.shopTables[0];
+    bs.emit("move", { x: floorTable.x, y: floorTable.y });
     await new Promise((r) => setTimeout(r, 100));
-    assert.ok(!(await emit(bs, "join-table", { tableId: go.tableId }))?.error);
-    const watch = await emit(bs, "join-call", {});
-    assert.equal(watch.ok, true);
-    assert.equal(watch.role, "spectator");
-    assert.ok(watch.peers.some((p) => p.userId === player.id), "peers carry their account id for the client-side lock");
-    assert.deepEqual(await emit(bs, "enable-video", {}), { ok: false, reason: "spectator" });
+    assert.ok(!(await emit(bs, "join-table", { tableId: floorTable.id }))?.error);
+    const free = await emit(bs, "join-call", {});
+    assert.equal(free.ok, true);
+    assert.notEqual(free.role, "spectator");
+    assert.notDeepEqual(await emit(bs, "enable-video", {}), { ok: false, reason: "spectator" });
+    await emit(bs, "leave-table", {});
   });
 
   test("table 5 is online: its player goes straight there, and a spectator can join it from anywhere", async () => {

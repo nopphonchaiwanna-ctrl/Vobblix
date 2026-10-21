@@ -222,7 +222,7 @@ describe("event day", { skip: SKIP_REASON }, () => {
     assert.equal(body.currentRoundMatches.length, 2);
   });
 
-  test("round 1 gets table numbers 1..n on the shop's tables", async () => {
+  test("round 1 gets online table numbers 1..n", async () => {
     const event = await createEvent({ maxPlayers: 8 });
     await registerAll(event.id, players.slice(0, 8));
     await openCheckInAndApproveAll(api, owner.token, event.id);
@@ -230,7 +230,7 @@ describe("event day", { skip: SKIP_REASON }, () => {
     const { body } = await api.get(`/events/${event.id}`, owner.token);
     const numbers = body.currentRoundMatches.map((m) => m.tableNumber).sort((a, b) => a - b);
     assert.deepEqual(numbers, [1, 2, 3, 4]);
-    assert.ok(body.currentRoundMatches.every((m) => m.tableOnline === false));
+    assert.ok(body.currentRoundMatches.every((m) => m.tableOnline === true));
   });
 
   test("alert consent is stored per event; pairing alerts reach every player with their own table", async () => {
@@ -264,7 +264,7 @@ describe("event day", { skip: SKIP_REASON }, () => {
       const opp = body.players.find((x) => x.id === (match.player1Id === me.id ? match.player2Id : match.player1Id));
       const notes = (await api.get("/notifications", p.token)).body.notifications.filter((n) => n.kind === "event_pairing");
       assert.equal(notes.length, 1);
-      assert.equal(notes[0].message, `Round 1: Table ${match.tableNumber} vs ${opp.displayName}`);
+      assert.equal(notes[0].message, `Round 1: Table ${match.tableNumber} (online) vs ${opp.displayName}`);
     }
   });
 

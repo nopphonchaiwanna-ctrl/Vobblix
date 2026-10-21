@@ -3,8 +3,10 @@
 // for online-table joins, the speaker/spectator split and the camera
 // lock; the event routes refresh it whenever a round starts or ends.
 //
-// In-shop tables keep their scene ids ("table-3"); online tables are
-// "event:<eventId>:t<number>" - a call with no spot on the 3D floor.
+// Every match now plays at an online table, "event:<eventId>:t<number>"
+// - a call with no spot on the 3D floor (lobby-events design §5). Rows
+// from before that may still say table_online = false; those map onto
+// the shop's scene table ids ("table-3") as they always did.
 
 import { pool } from "./db/pool.js";
 import { getShopById } from "./db/shops.js";

@@ -12,7 +12,6 @@ import { userIdsInRoom } from "../rooms.js";
 import { startingRoster } from "../tournament/entry.js";
 import { assignTables } from "../tournament/tables.js";
 import { parseStartsAt, registrationOpen } from "../tournament/schedule.js";
-import { resolveScene } from "../scenes/index.js";
 import { refreshEventTables } from "../eventTables.js";
 import { createEventNotifier } from "../eventNotify.js";
 import { eventRole } from "../eventAccess.js";
@@ -238,17 +237,15 @@ function publicEvent(event) {
 }
 
 /**
- * Gives a round's pairings their table numbers: the shop's real tables
- * for the top pairs (by the two players' points), online tables after.
+ * Gives a round's pairings their online table numbers, the top pairs (by
+ * the two players' points) first.
  */
-async function withTables(event, pairings, pointsById = new Map()) {
-  const shop = await getShopById(event.shop_id);
-  const physical = shop ? resolveScene(shop).TABLES.length : 0;
+function withTables(pairings, pointsById = new Map()) {
   const seeded = pairings.map((p) => ({
     ...p,
     seedPoints: (pointsById.get(p.player1Id) ?? 0) + (pointsById.get(p.player2Id) ?? 0),
   }));
-  return assignTables(seeded, physical);
+  return assignTables(seeded);
 }
 
 /** A player's own penalties (even after a DQ dropped them) - none if they never entered. */
@@ -690,9 +687,6 @@ export function createTournamentsRouter(io) {
       if (event.status !== "check_in") {
         return res.status(409).json({ error: "This event has already been started." });
       }
-      const shop = await getShopById(event.shop_id);
-      const physicalTables = shop ? resolveScene(shop).TABLES.length : 0;
-
       // Everything below runs inside the event's lock - see db.startFromCheckIn.
       const started = await db.startFromCheckIn(event.id, (locked, rows) => {
         const all = rows.filter((p) => !p.dropped);
@@ -715,7 +709,7 @@ export function createTournamentsRouter(io) {
           roundCount: computeRoundCount(players.length),
           cutEnabled: eligibility.cutEnabled,
           cutFallbackMessage: eligibility.reason,
-          pairings: assignTables(pairings.map((p) => ({ ...p, seedPoints: 0 })), physicalTables),
+          pairings: assignTables(pairings.map((p) => ({ ...p, seedPoints: 0 }))),
           byePlayerId,
         };
       });
@@ -842,7 +836,7 @@ async function advanceFromSwiss(event, res) {
     }));
     const { pairings, byePlayerId } = pairRound(pairingInput);
     const pointsById = new Map(standings.map((s) => [s.id, s.points]));
-    await db.insertRoundMatches(event.id, "swiss", nextRound, await withTables(event, pairings, pointsById));
+    await db.insertRoundMatches(event.id, "swiss", nextRound, withTables(pairings, pointsById));
     if (byePlayerId) await db.markPlayersHadBye([byePlayerId]);
     const updatedEvent = await db.advanceToSwissRound(event.id, nextRound);
     return res.json({ event: publicEvent(updatedEvent), nextRoundPairings: pairings });
@@ -865,7 +859,7 @@ async function advanceFromSwiss(event, res) {
   const cutResult = resolveCutRoster(sorted, event.configured_cut_size, totalRegistered);
   const qualifiedIds = cutResult.qualified.map((p) => p.id);
   const pairings = generateBracketRound1(qualifiedIds, cutResult.cutSize);
-  await db.insertRoundMatches(event.id, "bracket", 1, await withTables(event, pairings));
+  await db.insertRoundMatches(event.id, "bracket", 1, withTables(pairings));
   const updatedEvent = await db.startBracketPhase(event.id, cutResult.cutSize);
 
   // Everyone who didn't make the cut is already locked into their
@@ -904,7 +898,7 @@ async function advanceFromBracket(event, res) {
 
   if (event.current_round < rounds) {
     const nextPairings = advanceBracketRound(currentMatches);
-    await db.insertRoundMatches(event.id, "bracket", event.current_round + 1, await withTables(event, nextPairings));
+    await db.insertRoundMatches(event.id, "bracket", event.current_round + 1, withTables(nextPairings));
     const updatedEvent = await db.advanceToBracketRound(event.id, event.current_round + 1);
     return res.json({ event: publicEvent(updatedEvent), nextRoundPairings: nextPairings });
   }
