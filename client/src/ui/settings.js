@@ -27,6 +27,8 @@ import { attachPasswordChecklist, attachConfirmPasswordCheck } from "./passwordC
 import { requestAccountDeletionDialog } from "./confirmDialog.js";
 import { getNotifyOrders, setNotifyOrders, getNotifySound, setNotifySound } from "../prefs.js";
 import { showPanelScreen } from "./screens.js";
+import { CHARACTERS, DEFAULT_CHARACTER_ID, CHARACTER_COLORS } from "../scene3d/assets.js";
+import { strings } from "../scene3d/strings.js";
 
 function el(id) {
   return document.getElementById(id);
@@ -144,6 +146,52 @@ export function initSettingsPanel({ getToken, getSession, onBack, onProfileChang
     } catch (err) {
       profileError.textContent = err.message;
       profileError.hidden = false;
+    }
+  });
+
+  // ---------- Character (3D shop look) ----------
+  const characterForm = el("settings-character-form");
+  const characterGrid = el("settings-character-grid");
+  const colorGrid = el("settings-color-grid");
+  const characterSuccess = el("settings-character-success");
+  const characterError = el("settings-character-error");
+
+  // Native radios (arrow keys move between them, one tab stop per group);
+  // the thumbnail / swatch is just the label's look.
+  characterGrid.innerHTML = CHARACTERS.map(
+    (c, i) => `<label class="character-option">
+        <input type="radio" name="character" value="${c.id}" />
+        <img src="${c.thumb}" alt="Character ${i + 1}" width="64" height="64" loading="lazy" />
+      </label>`
+  ).join("");
+  colorGrid.innerHTML = CHARACTER_COLORS.map(
+    (color) => `<label class="color-option" style="--swatch:${color}">
+        <input type="radio" name="character-color" value="${color}" aria-label="${color}" />
+      </label>`
+  ).join("");
+
+  function selectCharacterInputs(avatarConfig) {
+    const character = CHARACTERS.some((c) => c.id === avatarConfig?.character) ? avatarConfig.character : DEFAULT_CHARACTER_ID;
+    const color = CHARACTER_COLORS.includes(avatarConfig?.color) ? avatarConfig.color : CHARACTER_COLORS[0];
+    characterForm.querySelector(`input[name="character"][value="${character}"]`).checked = true;
+    characterForm.querySelector(`input[name="character-color"][value="${color}"]`).checked = true;
+  }
+
+  characterForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    characterError.hidden = true;
+    characterSuccess.hidden = true;
+    const data = new FormData(characterForm);
+    try {
+      const { user } = await updateProfile(getToken(), {
+        avatarConfig: { character: data.get("character"), color: data.get("character-color") },
+      });
+      onProfileChanged?.(user);
+      characterSuccess.textContent = strings.characterAppliesNextVisit;
+      characterSuccess.hidden = false;
+    } catch (err) {
+      characterError.textContent = err.message;
+      characterError.hidden = false;
     }
   });
 
@@ -279,6 +327,9 @@ export function initSettingsPanel({ getToken, getSession, onBack, onProfileChang
       displayNameInput.value = session?.user?.displayName || "";
       avatarValue = session?.user?.avatarUrl || "";
       setAvatarPreview(avatarValue);
+      selectCharacterInputs(session?.user?.avatarConfig);
+      characterSuccess.hidden = true;
+      characterError.hidden = true;
 
       notifyOrdersToggle.checked = getNotifyOrders();
       notifySoundToggle.checked = getNotifySound();

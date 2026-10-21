@@ -20,6 +20,13 @@ export const CHARACTERS = CHARACTER_IDS.map((id) => ({
 
 export const DEFAULT_CHARACTER_ID = "male-a";
 
+// Outfit colors offered in Settings - the same 8 the server falls back
+// to when someone hasn't picked one (AVATAR_COLORS in server/src/rooms.js).
+export const CHARACTER_COLORS = [
+  "#ef4444", "#f97316", "#eab308", "#22c55e",
+  "#06b6d4", "#3b82f6", "#8b5cf6", "#ec4899",
+];
+
 // Animation clip names inside every character .glb (Kenney Mini Characters).
 export const CHARACTER_CLIPS = { idle: "idle", walk: "walk" };
 

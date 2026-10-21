@@ -1097,6 +1097,23 @@
         <p id="settings-profile-success" class="hint" hidden>Saved.</p>
         <p id="settings-profile-error" class="error" hidden></p>
 
+        <!-- Your character in the 3D shop (scene3d/) - filled in by
+             ui/settings.js from the asset manifest. -->
+        <h2 class="panel-subhead">Character</h2>
+        <form id="settings-character-form">
+          <fieldset class="character-picker">
+            <legend>Look</legend>
+            <div id="settings-character-grid" class="character-grid"></div>
+          </fieldset>
+          <fieldset class="character-picker">
+            <legend>Outfit color</legend>
+            <div id="settings-color-grid" class="color-grid"></div>
+          </fieldset>
+          <button type="submit">Save character</button>
+        </form>
+        <p id="settings-character-success" class="hint" hidden></p>
+        <p id="settings-character-error" class="error" hidden></p>
+
         <h2 class="panel-subhead">Password</h2>
         <form id="settings-password-form">
           <label>
