@@ -183,9 +183,13 @@ describe("event day", { skip: SKIP_REASON }, () => {
     assert.equal((await api.get(`/events/${event.id}`, players[0].token)).body.myPushConsent, true);
     assert.equal((await api.get(`/events/${event.id}`, players[1].token)).body.myPushConsent, null);
     const sub = await api.post("/notifications/push-subscriptions", players[0].token, {
-      endpoint: "https://push.example/abc", keys: { p256dh: "BKey", auth: "auth" },
+      endpoint: "https://fcm.googleapis.com/fcm/send/abc", keys: { p256dh: "BKey", auth: "auth" },
     });
     assert.equal(sub.status, 200);
+    const internal = await api.post("/notifications/push-subscriptions", players[0].token, {
+      endpoint: "https://127.0.0.1:3101/admin", keys: { p256dh: "BKey", auth: "auth" },
+    });
+    assert.equal(internal.status, 400, "the server never posts to internal hosts");
 
     await openCheckInAndApproveAll(api, owner.token, event.id);
     await api.post(`/events/${event.id}/start`, owner.token);
@@ -202,5 +206,27 @@ describe("event day", { skip: SKIP_REASON }, () => {
       assert.equal(notes.length, 1);
       assert.equal(notes[0].message, `Round 1: Table ${match.tableNumber} vs ${opp.displayName}`);
     }
+  });
+
+  test("the registration mode is locked once someone has registered", async () => {
+    const event = await createEvent();
+    const base = { name: "Day", game: "vanguard", vanguardRegion: "th", vanguardRegulation: "d_standard", format: "swiss_only", maxPlayers: 4, drawRule: "double_loss" };
+    assert.equal((await api.patch(`/events/${event.id}`, owner.token, { ...base, registrationMode: "lottery" })).status, 200, "free to change while empty");
+    await api.patch(`/events/${event.id}`, owner.token, { ...base, registrationMode: "first_come" });
+    await registerAll(event.id, players.slice(0, 1));
+    const r = await api.patch(`/events/${event.id}`, owner.token, { ...base, registrationMode: "lottery" });
+    assert.equal(r.status, 409);
+    assert.equal(r.body.error, "How players get in can't change once someone has registered.");
+    assert.equal((await api.patch(`/events/${event.id}`, owner.token, { ...base, name: "Renamed" })).status, 200, "other settings still editable");
+  });
+
+  test("raising the player limit lets waitlisters in first, in queue order", async () => {
+    const event = await createEvent({ maxPlayers: 4 });
+    await registerAll(event.id, players.slice(0, 6)); // 4 in, #1 and #2 waiting
+    const base = { name: "Day", game: "vanguard", vanguardRegion: "th", vanguardRegulation: "d_standard", format: "swiss_only", drawRule: "double_loss" };
+    assert.equal((await api.patch(`/events/${event.id}`, owner.token, { ...base, maxPlayers: 8 })).status, 200);
+    assert.equal((await playerRow(event.id, players[4].id)).entryStatus, "entered");
+    assert.equal((await playerRow(event.id, players[5].id)).entryStatus, "entered");
+    assert.ok((await kinds(players[4].token)).includes("event_promoted"));
   });
 });

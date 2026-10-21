@@ -204,9 +204,9 @@ export async function dropPlayer(playerId) {
   return rows[0] || null;
 }
 
-export async function markPlayersHadBye(playerIds) {
+export async function markPlayersHadBye(playerIds, db = pool) {
   if (playerIds.length === 0) return;
-  await pool.query(`UPDATE tournament_players SET had_bye = true WHERE id = ANY($1::uuid[])`, [playerIds]);
+  await db.query(`UPDATE tournament_players SET had_bye = true WHERE id = ANY($1::uuid[])`, [playerIds]);
 }
 
 export async function setPlayerFinalPlacement(playerId, { finalRank, finalLabel }) {
@@ -224,11 +224,11 @@ export async function setPlayerFinalPlacement(playerId, { finalRank, finalLabel 
  * a bye and is inserted with result already set to 'bye' and
  * confirmed_at = now() (nothing for anyone to report).
  */
-export async function insertRoundMatches(eventId, phase, roundNumber, pairings) {
+export async function insertRoundMatches(eventId, phase, roundNumber, pairings, db = pool) {
   const inserted = [];
   for (const { player1Id, player2Id, tableNumber = null, tableOnline = false } of pairings) {
     const isBye = !player2Id;
-    const { rows } = await pool.query(
+    const { rows } = await db.query(
       `INSERT INTO tournament_matches (event_id, phase, round_number, player1_id, player2_id, result, confirmed_at, table_number, table_online)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`,
@@ -492,4 +492,77 @@ export async function applyStartingRoster(eventId, { starterIds, noShowIds }) {
     eventId,
     noShowIds,
   ]);
+}
+
+/**
+ * After the limit goes up: waitlisters move in, in queue order, until the
+ * event is full again. Returns the promoted rows. (A lottery that hasn't
+ * been drawn has no waitlist yet - nothing to do.)
+ */
+export async function promoteWaitlistUpToLimit(eventId) {
+  return inEventTx(eventId, async (client, event) => {
+    if (!event.max_players || (event.registration_mode === "lottery" && !event.lottery_drawn_at)) return [];
+    const { rows: counts } = await client.query(
+      `SELECT COUNT(*)::int AS entered FROM tournament_players WHERE event_id = $1 AND dropped = false AND entry_status = 'entered'`,
+      [eventId]
+    );
+    const free = event.max_players - counts[0].entered;
+    if (free <= 0) return [];
+    const { rows } = await client.query(
+      `UPDATE tournament_players SET entry_status = 'entered', waitlist_position = NULL
+       WHERE id IN (
+         SELECT id FROM tournament_players
+         WHERE event_id = $1 AND dropped = false AND entry_status = 'waitlisted'
+         ORDER BY waitlist_position LIMIT $2
+       ) RETURNING *`,
+      [eventId, free]
+    );
+    return rows;
+  });
+}
+
+
+/**
+ * Start, all in one transaction with the event row locked (the same lock
+ * drops take): re-read the players, let `plan(event, players)` decide
+ * the roster + round 1, then flip the status, record no-shows/overflow
+ * and write round 1. Returns null if the event wasn't in check-in,
+ * { error } if plan refused, else { event, ...plan's result }.
+ */
+export async function startFromCheckIn(eventId, plan) {
+  return inEventTx(eventId, async (client, event) => {
+    if (!event || event.status !== "check_in") return null;
+    const { rows: players } = await client.query(
+      `SELECT tp.*, u.display_name FROM tournament_players tp JOIN users u ON u.id = tp.user_id
+       WHERE tp.event_id = $1 ORDER BY tp.registered_at ASC`,
+      [eventId]
+    );
+    const result = plan(event, players);
+    if (result.error) return { error: result.error };
+    const { rows } = await client.query(
+      `UPDATE tournament_events
+       SET status = 'swiss', current_phase = 'swiss', current_round = 1,
+           round_count = $2, cut_enabled = $3, started_at = now()
+       WHERE id = $1 RETURNING *`,
+      [eventId, result.roundCount, result.cutEnabled]
+    );
+    const { starters, noShows } = result;
+    // Waitlisters filling spots become entered; unapproved entrants are
+    // no-shows; anyone still "entered" beyond the roster (settings changed
+    // under them) goes back to the waitlist - they never pair.
+    await client.query(
+      `UPDATE tournament_players SET entry_status = 'entered', waitlist_position = NULL
+       WHERE event_id = $1 AND id = ANY($2::uuid[]) AND entry_status = 'waitlisted'`,
+      [eventId, starters]
+    );
+    await client.query(`UPDATE tournament_players SET no_show = true WHERE event_id = $1 AND id = ANY($2::uuid[])`, [eventId, noShows]);
+    await client.query(
+      `UPDATE tournament_players SET entry_status = 'waitlisted'
+       WHERE event_id = $1 AND entry_status = 'entered' AND dropped = false AND no_show = false AND NOT (id = ANY($2::uuid[]))`,
+      [eventId, starters]
+    );
+    await insertRoundMatches(eventId, "swiss", 1, result.pairings, client);
+    if (result.byePlayerId) await markPlayersHadBye([result.byePlayerId], client);
+    return { event: rows[0], ...result };
+  });
 }

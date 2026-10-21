@@ -4,7 +4,12 @@
 // spots filled from approved waitlisters in queue order. Pure, so the
 // routes stay thin and every rule is unit-tested.
 
+// An event with no player limit (created before limits were required)
+// has no waitlist: everyone is in, and everyone approved plays.
+const hasLimit = (maxPlayers) => Number.isInteger(maxPlayers) && maxPlayers > 0;
+
 export function entryStatusOnRegister({ mode, maxPlayers, enteredCount, lotteryDrawn }) {
+  if (!hasLimit(maxPlayers)) return "entered";
   if (mode === "lottery") return lotteryDrawn ? "waitlisted" : "pending_draw";
   return enteredCount < maxPlayers ? "entered" : "waitlisted";
 }
@@ -27,14 +32,17 @@ export function nextFromWaitlist(waitlisted) {
 }
 
 export function startingRoster({ entered, waitlisted, maxPlayers }) {
+  const cap = hasLimit(maxPlayers) ? maxPlayers : Infinity;
   const active = entered.filter((p) => !p.dropped);
-  const starters = active.filter((p) => p.approved).map((p) => p.id);
+  // Entrants keep registration order; never more than the limit, even if
+  // settings changed under them.
+  const starters = active.filter((p) => p.approved).map((p) => p.id).slice(0, cap);
   const noShows = active.filter((p) => !p.approved).map((p) => p.id);
   const fillers = waitlisted
     .filter((w) => !w.dropped && w.approved)
     .sort((a, b) => a.waitlistPosition - b.waitlistPosition);
   for (const w of fillers) {
-    if (starters.length >= maxPlayers) break;
+    if (starters.length >= cap) break;
     starters.push(w.id);
   }
   return { starters, noShows };

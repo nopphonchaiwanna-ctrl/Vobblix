@@ -7,6 +7,31 @@
 import webpush from "web-push";
 import { pool } from "../db/pool.js";
 
+// The browsers' push services - the only hosts we ever POST alerts to.
+// A subscription pointing anywhere else (an internal address, someone's
+// own server) is refused, so the endpoint can't be used to make this
+// server send requests to arbitrary places.
+const PUSH_HOST_SUFFIXES = [
+  "fcm.googleapis.com",
+  "android.googleapis.com",
+  "push.services.mozilla.com",
+  "push.apple.com",
+  "notify.windows.com",
+];
+const SEND_TIMEOUT_MS = 8000;
+
+export function isAllowedPushEndpoint(endpoint) {
+  let url;
+  try {
+    url = new URL(endpoint);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "https:" || url.port) return false;
+  const host = url.hostname.toLowerCase();
+  return PUSH_HOST_SUFFIXES.some((suffix) => host === suffix || host.endsWith(`.${suffix}`));
+}
+
 export function createPushService({ vapid, store, sender = webpush.sendNotification.bind(webpush) }) {
   const enabled = !!(vapid?.publicKey && vapid?.privateKey && vapid?.subject);
 
@@ -22,6 +47,7 @@ export function createPushService({ vapid, store, sender = webpush.sendNotificat
             await sender({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, payload, {
               vapidDetails: { subject: vapid.subject, publicKey: vapid.publicKey, privateKey: vapid.privateKey },
               TTL: 60 * 60,
+              timeout: SEND_TIMEOUT_MS,
             });
           } catch (err) {
             if (err.statusCode === 404 || err.statusCode === 410) await store.deleteSubscription(s.endpoint);

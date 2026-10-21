@@ -169,4 +169,34 @@ describe("judging", { skip: SKIP_REASON }, () => {
       assert.equal(cur.result, lost, "their unfinished match is a loss");
     }
   });
+
+  test("a match-loss penalty must name a player who is in that match", async () => {
+    const { event, body } = await runningEvent();
+    const [m1, m2] = body.currentRoundMatches.filter((m) => m.player2Id);
+    const r = await api.post(`/events/${event.id}/penalties`, owner.token, {
+      playerId: m2.player1Id, matchId: m1.id, level: "match_loss", reason: "Wrong table",
+    });
+    assert.equal(r.status, 400);
+    assert.equal(r.body.error, "That player isn't in this match.");
+  });
+
+  test("confirming a match loss after the round moved on is refused", async () => {
+    const { event, match, body } = await runningEvent();
+    const pending = await api.post(`/events/${event.id}/penalties`, judgeA.token, {
+      playerId: match.player1Id, matchId: match.id, level: "match_loss", reason: "Late",
+    });
+    for (const mm of body.currentRoundMatches.filter((x) => !x.result)) {
+      await api.post(`/events/${event.id}/matches/${mm.id}/override`, owner.token, { result: "player1_win" });
+    }
+    assert.equal((await api.post(`/events/${event.id}/advance`, owner.token)).status, 200);
+    const r = await api.post(`/events/${event.id}/penalties/${pending.body.penalty.id}/confirm`, owner.token);
+    assert.equal(r.status, 409);
+    assert.equal(r.body.error, "That round is over - this match loss can't be applied any more.");
+  });
+
+  test("no judge calls for a match that already has its result", async () => {
+    const { event, match, p1 } = await runningEvent();
+    await api.post(`/events/${event.id}/matches/${match.id}/override`, owner.token, { result: "player1_win" });
+    assert.equal((await api.post(`/events/${event.id}/matches/${match.id}/call-judge`, p1.token)).status, 409);
+  });
 });

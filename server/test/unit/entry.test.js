@@ -79,3 +79,20 @@ test("dropped players never start", () => {
   assert.deepEqual(starters, ["e2"]);
   assert.deepEqual(noShows, []);
 });
+
+test("an event with no player limit (old events) enters everyone and has no waitlist", () => {
+  assert.equal(entryStatusOnRegister({ mode: "first_come", maxPlayers: null, enteredCount: 50, lotteryDrawn: false }), "entered");
+  const { starters } = startingRoster({
+    entered: [{ id: "e1", approved: true, dropped: false }],
+    waitlisted: [{ id: "w1", approved: true, dropped: false, waitlistPosition: 1 }],
+    maxPlayers: null,
+  });
+  assert.deepEqual(starters, ["e1", "w1"]);
+});
+
+test("starters never exceed the limit, even if more entrants are approved", () => {
+  const entered = ["a", "b", "c", "d", "e"].map((id) => ({ id, approved: true, dropped: false }));
+  const { starters, noShows } = startingRoster({ entered, waitlisted: [], maxPlayers: 4 });
+  assert.deepEqual(starters, ["a", "b", "c", "d"]);
+  assert.deepEqual(noShows, []);
+});

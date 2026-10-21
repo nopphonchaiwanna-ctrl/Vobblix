@@ -12,7 +12,9 @@ export function createEventNotifier(io, push = getPushService()) {
     try {
       const n = await createNotification({ userId, kind, message, target });
       io.to(`user:${userId}`).emit("notification:new", publicNotification(n));
-      await push.sendToUser(userId, { title: "VobbLiX", body: message, url: target }, { eventId });
+      // Not awaited: a slow push service must never hold up the action
+      // that caused the alert (sendToUser logs its own failures).
+      push.sendToUser(userId, { title: "VobbLiX", body: message, url: target }, { eventId }).catch(() => {});
     } catch (err) {
       console.error(`[events] failed to notify ${kind}`, err);
     }

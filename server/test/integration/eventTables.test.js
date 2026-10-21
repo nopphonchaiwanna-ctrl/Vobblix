@@ -113,6 +113,31 @@ describe("event match tables", { skip: SKIP_REASON }, () => {
     assert.equal(body.shopCode, "tables");
   });
 
+  test("a judge added mid-round gets speaker rights at tables already in a call", async () => {
+    let player = null;
+    for (const p of players.slice(0, 10)) {
+      if ((await matchOf(p.id)).tableNumber === 2) { player = p; break; }
+    }
+    const ps = await enterShop(player.token);
+    const go = await emit(ps, "go-to-match", { eventId: event.id });
+    ps.emit("move", { x: go.x, y: go.y });
+    await new Promise((r) => setTimeout(r, 100));
+    await emit(ps, "join-table", { tableId: go.tableId });
+    await emit(ps, "join-call", {});
+    const judge = players[10];
+    const lock = new Promise((resolve) => {
+      const t = setTimeout(() => resolve(null), 3000);
+      ps.on("table-lock", (l) => {
+        if (l.tableId === go.tableId && l.speakerUserIds?.includes(judge.id)) {
+          clearTimeout(t);
+          resolve(l);
+        }
+      });
+    });
+    assert.equal((await api.post(`/events/${event.id}/judges`, owner.token, { userId: judge.id })).status, 200);
+    assert.ok(await lock, "the table's lock now includes the new judge");
+  });
+
   test("an unknown online table can't be joined", async () => {
     const s = await enterShop(players[10].token);
     const r = await emit(s, "join-table", { tableId: `event:${event.id}:t99` });

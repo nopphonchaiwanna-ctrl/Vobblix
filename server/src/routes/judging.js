@@ -11,6 +11,7 @@ import { searchUsersByName } from "../db/users.js";
 import { eventRole, requireEventStaff } from "../eventAccess.js";
 import { createEventNotifier } from "../eventNotify.js";
 import { penaltyOutcome } from "../tournament/penalties.js";
+import { refreshEventTables } from "../eventTables.js";
 
 const RECALL_COOLDOWN_MS = 60 * 1000;
 const RUNNING = ["swiss", "bracket"];
@@ -108,6 +109,8 @@ export function createJudgingRouter(io) {
       const player = userId ? await db.getPlayerByEventAndUser(event.id, userId) : null;
       if (player && !player.dropped) return res.status(409).json({ error: "Players in this event can't judge it." });
       await judging.addJudge(event.id, userId, req.auth.userId);
+      // Judges speak at every match table - tell tables already in a call.
+      await refreshEventTables(io, event.shop_id);
       await notifyUser(userId, {
         eventId: event.id, kind: "event_judge_added",
         message: `You're a judge for "${event.name}".`,
@@ -125,6 +128,7 @@ export function createJudgingRouter(io) {
       const event = await loadEvent(req, res);
       if (!event || !(await requireOrganizer(req, res, event))) return;
       await judging.removeJudge(event.id, req.params.userId);
+      await refreshEventTables(io, event.shop_id);
       res.json({ ok: true });
     } catch (err) {
       next(err);
@@ -143,8 +147,9 @@ export function createJudgingRouter(io) {
       if (![p1?.user_id, p2?.user_id].includes(req.auth.userId)) {
         return res.status(403).json({ error: "Only the players in this match can call a judge." });
       }
-      const current = RUNNING.includes(event.status) && match.phase === event.current_phase && match.round_number === event.current_round;
-      if (!current) return res.status(409).json({ error: "This match isn't being played right now." });
+      if (!isCurrentRoundMatch(event, match) || match.result) {
+        return res.status(409).json({ error: "This match isn't being played right now." });
+      }
 
       const last = await judging.lastCallBy(match.id, req.auth.userId);
       const waitMs = last ? RECALL_COOLDOWN_MS - last.age_ms : 0;
@@ -220,6 +225,9 @@ export function createJudgingRouter(io) {
       if (!player || player.event_id !== event.id) return res.status(404).json({ error: "Player not found in this event." });
       const match = matchId ? await db.getMatchById(matchId) : null;
       if (matchId && (!match || match.event_id !== event.id)) return res.status(404).json({ error: "Match not found." });
+      if (match && match.player1_id !== player.id && match.player2_id !== player.id) {
+        return res.status(400).json({ error: "That player isn't in this match." });
+      }
       const outcome = penaltyOutcome({ level, issuerRole: role, matchIsCurrentRound: !!match && isCurrentRoundMatch(event, match) });
       if (!outcome.allowed) return res.status(400).json({ error: outcome.reason });
 
@@ -246,6 +254,12 @@ export function createJudgingRouter(io) {
         if (!event || !(await requireOrganizer(req, res, event))) return;
         const existing = await judging.getPenalty(req.params.penaltyId);
         if (!existing || existing.event_id !== event.id) return res.status(404).json({ error: "Penalty not found." });
+        if (status === "confirmed" && existing.level === "match_loss") {
+          const match = await db.getMatchById(existing.match_id);
+          if (!match || !isCurrentRoundMatch(event, match)) {
+            return res.status(409).json({ error: "That round is over - this match loss can't be applied any more." });
+          }
+        }
         const decided = await judging.decidePenalty(existing.id, status, req.auth.userId);
         if (!decided) return res.status(409).json({ error: "This penalty was already decided." });
         if (status === "confirmed") await applyPenalty(event, decided, req.auth.userId);

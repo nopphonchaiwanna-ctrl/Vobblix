@@ -2,7 +2,7 @@
 import { Router } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { listNotifications, markAllNotificationsRead, publicNotification } from "../db/notifications.js";
-import { getPushService, pushStore } from "../services/push.js";
+import { getPushService, pushStore, isAllowedPushEndpoint } from "../services/push.js";
 
 export const notificationsRouter = Router();
 notificationsRouter.use(requireAuth);
@@ -39,7 +39,7 @@ notificationsRouter.post("/push-subscriptions", async (req, res, next) => {
   try {
     const endpoint = req.body?.endpoint;
     const keys = req.body?.keys;
-    if (typeof endpoint !== "string" || !endpoint.startsWith("https://") || endpoint.length > 1000 || !keys?.p256dh || !keys?.auth) {
+    if (typeof endpoint !== "string" || endpoint.length > 1000 || !isAllowedPushEndpoint(endpoint) || !keys?.p256dh || !keys?.auth) {
       return res.status(400).json({ error: "Invalid push subscription." });
     }
     await pushStore.saveSubscription(req.auth.userId, { endpoint, keys: { p256dh: String(keys.p256dh), auth: String(keys.auth) } });

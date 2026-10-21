@@ -56,3 +56,30 @@ test("without VAPID keys push is off and never throws", async () => {
   await push.sendToUser("u1", { title: "t", body: "b", url: "/x" }, { eventId: "e1" });
   assert.equal(sent.length, 0);
 });
+
+import { isAllowedPushEndpoint } from "../../src/services/push.js";
+
+test("only real browser push services are accepted as endpoints", () => {
+  for (const ok of [
+    "https://fcm.googleapis.com/fcm/send/abc",
+    "https://updates.push.services.mozilla.com/wpush/v2/abc",
+    "https://web.push.apple.com/QGxyz",
+    "https://wns2-par02p.notify.windows.com/w/?token=abc",
+  ]) assert.equal(isAllowedPushEndpoint(ok), true, ok);
+  for (const bad of [
+    "https://127.0.0.1/x",
+    "https://localhost/x",
+    "https://10.0.0.5/x",
+    "http://fcm.googleapis.com/fcm/send/abc",
+    "https://fcm.googleapis.com.evil.example/x",
+    "https://evil.example/fcm.googleapis.com",
+    "not a url",
+  ]) assert.equal(isAllowedPushEndpoint(bad), false, bad);
+});
+
+test("each send has a timeout so a slow push service can't hang anything", async () => {
+  let options = null;
+  const push = createPushService({ vapid, store: fakeStore({ consent: { "e1:u1": true } }), sender: async (_s, _p, o) => (options = o) });
+  await push.sendToUser("u1", { title: "t", body: "b", url: "/x" }, { eventId: "e1" });
+  assert.ok(options.timeout > 0 && options.timeout <= 10000);
+});

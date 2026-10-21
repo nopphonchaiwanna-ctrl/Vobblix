@@ -391,11 +391,24 @@ export function createTournamentsRouter(io) {
         const parsed = parseEventSettings(req.body);
         if (parsed.error) return res.status(400).json({ error: parsed.error });
         const activeCount = await db.countEnteredPlayers(event.id);
+        if (parsed.fields.registrationMode !== event.registration_mode && (await db.countActivePlayers(event.id)) > 0) {
+          return res.status(409).json({ error: "How players get in can't change once someone has registered." });
+        }
         if (parsed.fields.maxPlayers < activeCount) {
           return res.status(409).json({ error: `${activeCount} players are already registered - the limit can't go below that.` });
         }
         const updated = await db.updateEventSettings(event.id, parsed.fields);
         if (!updated) return res.status(409).json({ error: "This event has just started - reload and try again." });
+        if ((updated.max_players ?? 0) > (event.max_players ?? 0)) {
+          for (const p of await db.promoteWaitlistUpToLimit(event.id)) {
+            await notifyUser(p.user_id, {
+              eventId: event.id,
+              kind: "event_promoted",
+              message: `You're in "${updated.name}" - a spot opened up.`,
+              target: `/events/${event.id}`,
+            });
+          }
+        }
         return res.json({ event: publicEvent(updated) });
       }
 
@@ -650,48 +663,43 @@ export function createTournamentsRouter(io) {
       if (event.status !== "check_in") {
         return res.status(409).json({ error: "This event has already been started." });
       }
+      const shop = await getShopById(event.shop_id);
+      const physicalTables = shop ? resolveScene(shop).TABLES.length : 0;
 
-      const all = (await db.getPlayersForEvent(event.id)).filter((p) => !p.dropped);
-      const toRoster = (p) => ({ id: p.id, approved: !!p.checked_in_at, dropped: p.dropped, waitlistPosition: p.waitlist_position });
-      const { starters, noShows } = startingRoster({
-        entered: all.filter((p) => p.entry_status === "entered").map(toRoster),
-        waitlisted: all.filter((p) => p.entry_status === "waitlisted").map(toRoster),
-        maxPlayers: event.max_players,
+      // Everything below runs inside the event's lock - see db.startFromCheckIn.
+      const started = await db.startFromCheckIn(event.id, (locked, rows) => {
+        const all = rows.filter((p) => !p.dropped);
+        const toRoster = (p) => ({ id: p.id, approved: !!p.checked_in_at, dropped: p.dropped, waitlistPosition: p.waitlist_position });
+        const { starters, noShows } = startingRoster({
+          entered: all.filter((p) => p.entry_status === "entered").map(toRoster),
+          waitlisted: all.filter((p) => p.entry_status === "waitlisted").map(toRoster),
+          maxPlayers: locked.max_players,
+        });
+        if (starters.length < 2) return { error: "Need at least 2 checked-in players to start." };
+        const starterSet = new Set(starters);
+        const players = all.filter((p) => starterSet.has(p.id));
+        const eligibility = resolveCutEligibility(locked.format, players.length, locked.configured_cut_size);
+        const { pairings, byePlayerId } = pairRound(
+          players.map((p) => ({ id: p.id, points: 0, opponentIds: [], hadBye: p.had_bye, dropped: false }))
+        );
+        return {
+          starters,
+          noShows,
+          roundCount: computeRoundCount(players.length),
+          cutEnabled: eligibility.cutEnabled,
+          cutFallbackMessage: eligibility.reason,
+          pairings: assignTables(pairings.map((p) => ({ ...p, seedPoints: 0 })), physicalTables),
+          byePlayerId,
+        };
       });
-      if (starters.length < 2) {
-        return res.status(400).json({ error: "Need at least 2 checked-in players to start." });
-      }
-      const starterSet = new Set(starters);
-      const players = all.filter((p) => starterSet.has(p.id));
-
-      const roundCount = computeRoundCount(players.length);
-      const eligibility = resolveCutEligibility(event.format, players.length, event.configured_cut_size);
-
-      // Guarded on status = 'check_in': of two starts at once, one wins
-      // and the other stops here before any round is created.
-      const updatedEvent = await db.startEvent(event.id, {
-        roundCount,
-        cutEnabled: eligibility.cutEnabled,
-      });
-      if (!updatedEvent) return res.status(409).json({ error: "This event has already been started." });
-      await db.applyStartingRoster(event.id, { starterIds: starters, noShowIds: noShows });
-
-      const pairingInput = players.map((p) => ({
-        id: p.id,
-        points: 0,
-        opponentIds: [],
-        hadBye: p.had_bye,
-        dropped: false,
-      }));
-      const { pairings, byePlayerId } = pairRound(pairingInput);
-      await db.insertRoundMatches(event.id, "swiss", 1, await withTables(event, pairings));
-      if (byePlayerId) await db.markPlayersHadBye([byePlayerId]);
+      if (!started) return res.status(409).json({ error: "This event has already been started." });
+      if (started.error) return res.status(400).json({ error: started.error });
 
       await refreshEventTables(io, event.shop_id);
       res.json({
-        event: publicEvent(updatedEvent),
-        round1Pairings: pairings,
-        cutFallbackMessage: eligibility.reason,
+        event: publicEvent(started.event),
+        round1Pairings: started.pairings,
+        cutFallbackMessage: started.cutFallbackMessage,
       });
     } catch (err) {
       next(err);
