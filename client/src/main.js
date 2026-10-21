@@ -1130,7 +1130,7 @@ function enterShop(roomId) {
     document.getElementById("hud-shop-name").textContent = payload.roomId;
     document.body.classList.add("in-shop");
     hud.show(true);
-    setShopChatOpen(false);
+    setTableTab(false);
 
     // Floor size, table layout and the counter/board positions come
     // entirely from the server (see server/src/scenes/) - the client never
@@ -1150,7 +1150,7 @@ function enterShop(roomId) {
       callHooks: currentCallTeardown,
     });
     currentWorld.onNearChange(showInteractPrompt);
-    if (!currentWorld.hasScene) setShopChatOpen(true); // chat-only mode: show the one thing that works
+    if (!currentWorld.hasScene) openChat("shop", { focus: false }); // chat-only mode: show the one thing that works
     detachJoystick = attachJoystick(joystickEl, joystickEl.firstElementChild, (v) => currentWorld?.setAnalogInput(v));
   });
 }
@@ -1161,7 +1161,7 @@ function enterShop(roomId) {
 const interactPrompt = document.getElementById("interact-prompt");
 const interactBtn = document.getElementById("interact-btn");
 const leaveTableBtn = document.getElementById("leave-table-btn");
-leaveTableBtn.textContent = strings.leaveTable;
+leaveTableBtn.innerHTML = `${icon("log-out")}${strings.leaveTable}`;
 let currentNear = null;
 
 const PROMPT_LABELS = { table: strings.joinTable, board: strings.viewEvents, counter: strings.openShop };
@@ -1192,7 +1192,7 @@ async function actOnNear() {
       return;
     }
     leaveTableBtn.hidden = false;
-    setShopChatOpen(false); // the table's chat takes the sidebar while seated
+    setTableTab(true);
     // Same click that sat the player down - mic permission prompt (if
     // any) appears right away. Refusing it still leaves them seated
     // with table chat working.
@@ -1204,6 +1204,7 @@ interactBtn.addEventListener("click", actOnNear);
 leaveTableBtn.addEventListener("click", () => {
   currentWorld?.leaveTable();
   leaveTableBtn.hidden = true;
+  setTableTab(false);
 });
 
 // ---------- Touch: thumbstick + soft keyboard ----------
@@ -1221,15 +1222,65 @@ function openShopListings() {
   if (!shopListingsDialog.open) shopListingsDialog.showModal();
 }
 
-function setShopChatOpen(open) {
-  document.body.classList.toggle("shop-chat-open", open);
-  chatUI.setShopChatOpen(open);
-  hud.setShopChatOpen(open);
-  if (open) document.getElementById("shop-chat-input").focus();
+// The chat dock: one panel, a "Shop" tab and - while seated - a tab for
+// this table. Unread counts show on whichever tab isn't in view, and
+// their sum on the HUD's chat button.
+const chatDock = document.getElementById("chat-dock");
+const chatTabShop = document.getElementById("chat-tab-shop");
+const chatTabTable = document.getElementById("chat-tab-table");
+const chatTabBadges = {
+  shop: document.getElementById("chat-tab-shop-badge"),
+  table: document.getElementById("chat-tab-table-badge"),
+};
+const chatUnread = { shop: 0, table: 0 };
+let chatOpen = false;
+let chatTab = "shop";
+
+function renderChatDock() {
+  document.body.classList.toggle("chat-open", chatOpen);
+  chatDock.dataset.tab = chatTab;
+  chatTabShop.setAttribute("aria-selected", String(chatTab === "shop"));
+  chatTabTable.setAttribute("aria-selected", String(chatTab === "table"));
+  chatUI.setShopChatOpen(chatOpen && chatTab === "shop");
+  chatUI.setTableChatVisible(chatOpen && chatTab === "table");
+  hud.setShopChatOpen(chatOpen);
 }
 
+function openChat(tab = chatTab, { focus = true } = {}) {
+  chatOpen = true;
+  chatTab = tab;
+  renderChatDock();
+  if (focus) document.getElementById(tab === "table" ? "table-chat-input" : "shop-chat-input").focus();
+}
+
+function closeChat() {
+  chatOpen = false;
+  renderChatDock();
+}
+
+function setChatUnread(tab, n) {
+  chatUnread[tab] = n;
+  chatTabBadges[tab].hidden = n === 0;
+  chatTabBadges[tab].textContent = n > 9 ? "9+" : String(n);
+  hud.setShopUnread(chatUnread.shop + chatUnread.table);
+}
+
+/** Seated: the table's tab appears and opens; standing up removes it. */
+function setTableTab(seated) {
+  chatTabTable.hidden = !seated;
+  if (seated) {
+    openChat("table", { focus: false });
+  } else {
+    chatTab = "shop";
+    closeChat();
+  }
+}
+
+chatTabShop.addEventListener("click", () => openChat("shop"));
+chatTabTable.addEventListener("click", () => openChat("table"));
+
 hud = initHud({
-  onToggleShopChat: () => setShopChatOpen(!document.body.classList.contains("shop-chat-open")),
+  onToggleShopChat: () => (chatOpen ? closeChat() : openChat()),
   onOpenNotifications: (anchor) => {
     notifAnchor = anchor;
     topbarNotifMenu.togglePopover();
@@ -1260,7 +1311,8 @@ hud = initHud({
     { id: "leave", label: "Leave shop", icon: "log-out", onSelect: () => navigate("/lobby") },
   ],
 });
-chatUI.onShopUnreadChange((n) => hud.setShopUnread(n));
+chatUI.onShopUnreadChange((n) => setChatUnread("shop", n));
+chatUI.onTableUnreadChange((n) => setChatUnread("table", n));
 window.addEventListener("keydown", (e) => {
   if (!currentWorld || gameScreen.hidden || isTextInputFocused() || !shopKeysActive() || e.repeat) return;
   // Enter only means "interact" when nothing else has focus - on a
@@ -1298,6 +1350,7 @@ function leaveShop() {
   currentShopDbId = null;
   topbarMenuEvents.hidden = true;
   document.body.classList.remove("in-shop");
+  setTableTab(false);
   hud.show(false);
   shopListingsDialog.close();
   gameScreen.hidden = true;

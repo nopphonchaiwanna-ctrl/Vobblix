@@ -66,6 +66,20 @@ export function initCallUI() {
     expandBtn.setAttribute("aria-label", expandBtn.title);
   }
 
+  // While seated the call controls sit in a framed bar over the 3D view
+  // that can be folded down to just this button.
+  const controlsEl = el("call-controls");
+  const controlsToggle = el("call-controls-toggle");
+  function setControlsCollapsed(collapsed) {
+    controlsEl.classList.toggle("collapsed", collapsed);
+    controlsToggle.innerHTML = icon(collapsed ? "maximize-2" : "minimize-2", "icon-only");
+    controlsToggle.title = collapsed ? "Show call controls" : "Hide call controls";
+    controlsToggle.setAttribute("aria-label", controlsToggle.title);
+    controlsToggle.setAttribute("aria-expanded", String(!collapsed));
+  }
+  setControlsCollapsed(false);
+  controlsToggle.addEventListener("click", () => setControlsCollapsed(!controlsEl.classList.contains("collapsed")));
+
   expandBtn.addEventListener("click", () => {
     setExpanded(!panel.classList.contains("expanded"));
   });

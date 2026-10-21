@@ -1211,7 +1211,6 @@
           <button type="button" id="interact-btn" class="interact-btn"></button>
           <span class="interact-key" aria-hidden="true">E</span>
         </div>
-        <button type="button" id="leave-table-btn" class="leave-table-btn" hidden></button>
         <!-- Touch screens: thumbstick for walking (scene3d/input.js). -->
         <div id="joystick" class="joystick" aria-hidden="true"><div class="joystick-knob"></div></div>
       </div>
@@ -1220,7 +1219,15 @@
       <div id="rotate-overlay" class="rotate-overlay" role="status"><p id="rotate-text"></p></div>
 
       <aside id="chat-panels">
-        <section class="chat-panel" id="shop-chat-panel">
+        <!-- One chat dock with tabs (ui/hud.js opens it): this shop's chat,
+             and - while seated - this table's chat. Each tab shows an
+             unread count while you're looking at the other one. -->
+        <div id="chat-dock" class="chat-dock" data-tab="shop">
+          <div class="chat-tabs" role="tablist" aria-label="Chat">
+            <button type="button" role="tab" id="chat-tab-shop" class="chat-tab" aria-controls="shop-chat-panel" aria-selected="true">Shop <span id="chat-tab-shop-badge" class="hud-badge chat-tab-badge" hidden>0</span></button>
+            <button type="button" role="tab" id="chat-tab-table" class="chat-tab" aria-controls="table-chat-panel" aria-selected="false" hidden><span id="table-chat-title">Table</span> <span id="chat-tab-table-badge" class="hud-badge chat-tab-badge" hidden>0</span></button>
+          </div>
+        <section class="chat-panel" id="shop-chat-panel" role="tabpanel" aria-labelledby="chat-tab-shop">
           <header><span class="icon"><svg
   class="lucide lucide-store"
   xmlns="http://www.w3.org/2000/svg"
@@ -1267,6 +1274,17 @@
             <button type="submit">Send</button>
           </form>
         </section>
+        <section class="chat-panel" id="table-chat-panel" role="tabpanel" aria-labelledby="chat-tab-table">
+          <div class="chat-log" id="table-chat-log"></div>
+          <form id="table-chat-form" class="chat-form">
+            <input id="table-chat-input" placeholder="Message this table only..." autocomplete="off" disabled />
+            <button type="submit" disabled>Send</button>
+          </form>
+          <p class="table-hint" id="table-chat-hint">
+            Only people at this table see these messages.
+          </p>
+        </section>
+        </div>
 
         <!-- Listings for the current shop, only shown when it's an
              owner-created marketplace shop (see main.js's isOwnedShop
@@ -1316,7 +1334,8 @@
           </header>
           <div class="call-tiles" id="call-tiles"></div>
           <p class="call-big-empty" id="call-big-empty" hidden></p>
-          <div class="call-controls">
+          <div class="call-controls" id="call-controls">
+            <button type="button" id="call-controls-toggle" class="call-controls-toggle" aria-expanded="true" aria-controls="call-controls" title="Hide controls" aria-label="Hide controls"></button>
             <button type="button" id="call-join-btn" data-state="idle"><span class="icon"><svg
   class="lucide lucide-mic"
   xmlns="http://www.w3.org/2000/svg"
@@ -1405,37 +1424,11 @@
               <div class="split-btn-caret" aria-hidden="true">▾</div>
               <select id="call-camera-select" class="split-btn-select" aria-label="Camera"></select>
             </div>
+            <button type="button" id="leave-table-btn" class="leave-table-btn" hidden></button>
           </div>
           <p class="table-hint" id="call-hint" hidden></p>
         </section>
 
-        <section class="chat-panel" id="table-chat-panel">
-          <header><span class="icon"><svg
-  class="lucide lucide-armchair"
-  xmlns="http://www.w3.org/2000/svg"
-  width="24"
-  height="24"
-  viewBox="0 0 24 24"
-  fill="none"
-  stroke="currentColor"
-  stroke-width="2"
-  stroke-linecap="round"
-  stroke-linejoin="round"
->
-  <path d="M19 9V6a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v3" />
-  <path d="M3 16a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5a2 2 0 0 0-4 0v1.5a.5.5 0 0 1-.5.5h-9a.5.5 0 0 1-.5-.5V11a2 2 0 0 0-4 0z" />
-  <path d="M5 18v2" />
-  <path d="M19 18v2" />
-</svg></span><span id="table-chat-title">Walk up to a table</span></header>
-          <div class="chat-log" id="table-chat-log"></div>
-          <form id="table-chat-form" class="chat-form">
-            <input id="table-chat-input" placeholder="Message this table only..." autocomplete="off" disabled />
-            <button type="submit" disabled>Send</button>
-          </form>
-          <p class="table-hint" id="table-chat-hint">
-            Only people at this table see these messages.
-          </p>
-        </section>
       </aside>
 
       <!-- The shop's listings - opened from the counter or the ⊞ menu. -->

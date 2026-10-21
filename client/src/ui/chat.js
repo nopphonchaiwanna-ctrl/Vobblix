@@ -73,6 +73,14 @@ export function initChatUI() {
     shopUnread = n;
     onShopUnread?.(n);
   }
+  // Same for the table tab of the chat dock.
+  let tableChatVisible = true;
+  let tableUnread = 0;
+  let onTableUnread = null;
+  function setTableUnread(n) {
+    tableUnread = n;
+    onTableUnread?.(n);
+  }
 
   shopForm.addEventListener("submit", (e) => {
     e.preventDefault();
@@ -149,6 +157,14 @@ export function initChatUI() {
     },
     appendTableMessage(msg) {
       appendMessage(tableLog, msg, { blockedIds, ownUserId });
+      if (!tableChatVisible && !msg.system && !blockedIds.has(msg.authorId)) setTableUnread(tableUnread + 1);
+    },
+    setTableChatVisible(visible) {
+      tableChatVisible = visible;
+      if (visible) setTableUnread(0);
+    },
+    onTableUnreadChange(cb) {
+      onTableUnread = cb;
     },
     setSeatedAt(tableLabel) {
       if (tableLabel) {
@@ -165,6 +181,7 @@ export function initChatUI() {
     },
     clearTableLog() {
       tableLog.innerHTML = "";
+      setTableUnread(0);
     },
 
     // "Who's in this table's call" roster - see the comment on
