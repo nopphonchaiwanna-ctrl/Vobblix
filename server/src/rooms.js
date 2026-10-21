@@ -120,6 +120,7 @@ export function setInCall(roomId, socketId, inCall) {
     player.videoOn = false;
     player.micMuted = false;
     player.deafened = false;
+    player.callRole = null;
   }
   return player;
 }

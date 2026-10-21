@@ -8,6 +8,8 @@ import { resolveScene } from "./scenes/index.js";
 import { verifyToken } from "./auth.js";
 import { getAvatarProfile, isActiveUser } from "./db/users.js";
 import { isWithinTableRange } from "./tableRange.js";
+import { activeMatchTables } from "./eventTables.js";
+import { callAdmission } from "./tournament/speakers.js";
 import { authRouter } from "./routes/auth.js";
 import { ownerApplicationsRouter } from "./routes/ownerApplications.js";
 import { accountRouter } from "./routes/account.js";
@@ -323,8 +325,12 @@ io.on("connection", (socket) => {
     const meta = socketMeta.get(socket.id);
     if (!meta) return;
     const table = meta.tables.find((t) => t.id === tableId);
-    if (!table) return; // unknown table, ignore
-    if (!isWithinTableRange(getPlayer(meta.roomId, socket.id), table)) {
+    if (!table) {
+      // Online match tables have no spot on the floor - joinable from
+      // anywhere in the shop (to play, or to watch), while that round runs.
+      if (!String(tableId).startsWith("event:")) return; // unknown table, ignore
+      if (!(await activeMatchTables(meta.shopDbId)).has(tableId)) return ack?.({ error: "unknown-table" });
+    } else if (!isWithinTableRange(getPlayer(meta.roomId, socket.id), table)) {
       ack?.({ error: "too-far" });
       return;
     }
@@ -422,21 +428,54 @@ io.on("connection", (socket) => {
     }
   });
 
+  // Where this player's current match is: an in-shop table (and a spot
+  // beside it to stand, inside its join range) or an online table.
+  socket.on("go-to-match", async ({ eventId } = {}, ack) => {
+    const meta = socketMeta.get(socket.id);
+    if (!meta) return ack?.({ error: "not-in-shop" });
+    const tables = await activeMatchTables(meta.shopDbId);
+    for (const [tableId, info] of tables) {
+      if (info.eventId !== eventId || !info.playerUserIds.includes(socket.user.userId)) continue;
+      if (info.online) {
+        const me = getPlayer(meta.roomId, socket.id);
+        return ack?.({ tableId, online: true, x: me?.x ?? null, y: me?.y ?? null });
+      }
+      return ack?.({ tableId, online: false, x: info.table.x, y: info.table.y + Math.round(info.table.radius * 0.6) });
+    }
+    ack?.({ error: "no-match" });
+  });
+
   // ---------- Voice/video calls (per table, WebRTC mesh) ----------
   // The server never sees any audio/video - only signaling (who's in the
   // call, and offer/answer/ICE relayed between peers). See
   // client/src/webrtc/callManager.js for the browser side.
 
-  socket.on("join-call", (_payload, ack) => {
+  socket.on("join-call", async (_payload, ack) => {
     const meta = socketMeta.get(socket.id);
     if (!meta || !meta.tableId) return ack?.({ ok: false, reason: "not-seated" });
 
-    if (voiceCountAtTable(meta.roomId, meta.tableId) >= VOICE_LIMIT) {
+    // A table hosting a match: its players + event staff speak, everyone
+    // else watches (see tournament/speakers.js and eventTables.js).
+    const match = (await activeMatchTables(meta.shopDbId)).get(meta.tableId) || null;
+    let callRole = "speaker";
+    if (match) {
+      const userId = socket.user.userId;
+      const kind = match.staffUserIds.has(userId) ? "staff" : match.playerUserIds.includes(userId) ? "player" : "spectator";
+      const inCall = listPlayers(meta.roomId).filter((p) => p.tableId === meta.tableId && p.inCall && p.id !== socket.id);
+      const admission = callAdmission({
+        kind,
+        total: inCall.length,
+        spectators: inCall.filter((p) => p.callRole === "spectator").length,
+      });
+      if (!admission.ok) return ack?.({ ok: false, reason: admission.reason });
+      callRole = kind === "spectator" ? "spectator" : "speaker";
+    } else if (voiceCountAtTable(meta.roomId, meta.tableId) >= VOICE_LIMIT) {
       return ack?.({ ok: false, reason: "voice-full" });
     }
 
     const player = setInCall(meta.roomId, socket.id, true);
     if (!player) return ack?.({ ok: false, reason: "unknown" });
+    player.callRole = callRole;
 
     // Existing call members at this table - the joiner dials each of
     // these (see callManager's "joiner always makes the offer" rule,
@@ -450,7 +489,12 @@ io.on("connection", (socket) => {
       name: player.name,
     });
 
-    ack?.({ ok: true, peers });
+    ack?.({
+      ok: true,
+      peers,
+      role: callRole,
+      speakerUserIds: match ? [...match.speakerUserIds] : null,
+    });
   });
 
   socket.on("leave-call", () => {
@@ -468,6 +512,7 @@ io.on("connection", (socket) => {
 
     const player = getPlayer(meta.roomId, socket.id);
     if (!player?.inCall) return ack?.({ ok: false, reason: "not-in-call" });
+    if (player.callRole === "spectator") return ack?.({ ok: false, reason: "spectator" });
 
     if (videoCountAtTable(meta.roomId, meta.tableId) >= VIDEO_LIMIT) {
       return ack?.({ ok: false, reason: "video-full" });

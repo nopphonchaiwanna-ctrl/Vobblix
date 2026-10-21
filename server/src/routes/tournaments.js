@@ -12,6 +12,7 @@ import { userIdsInRoom } from "../rooms.js";
 import { startingRoster } from "../tournament/entry.js";
 import { assignTables } from "../tournament/tables.js";
 import { resolveScene } from "../scenes/index.js";
+import { refreshEventTables } from "../eventTables.js";
 import * as db from "../db/tournaments.js";
 import { createNotification, publicNotification } from "../db/notifications.js";
 import {
@@ -399,6 +400,7 @@ export function createTournamentsRouter(io) {
       if (!event) return;
       const cancelled = await db.cancelEvent(event.id);
       if (!cancelled) return res.status(409).json({ error: "This event has already finished or been cancelled." });
+      await refreshEventTables(io, event.shop_id);
 
       // Tell every active player (except whoever cancelled it). Persisted
       // first so an offline player sees it in their bell next login; the
@@ -617,6 +619,7 @@ export function createTournamentsRouter(io) {
       await db.insertRoundMatches(event.id, "swiss", 1, await withTables(event, pairings));
       if (byePlayerId) await db.markPlayersHadBye([byePlayerId]);
 
+      await refreshEventTables(io, event.shop_id);
       res.json({
         event: publicEvent(updatedEvent),
         round1Pairings: pairings,
@@ -706,10 +709,11 @@ export function createTournamentsRouter(io) {
         return res.status(409).json({ error: "Every match in the current round needs a confirmed result first." });
       }
 
-      if (event.current_phase === "swiss") {
-        return await advanceFromSwiss(event, res);
-      }
-      return await advanceFromBracket(event, res);
+      if (event.current_phase === "swiss") await advanceFromSwiss(event, res);
+      else await advanceFromBracket(event, res);
+      // Whatever came next (new round, top cut, done), the tables the
+      // last round used are re-assigned or free now.
+      await refreshEventTables(io, event.shop_id);
     } catch (err) {
       next(err);
     }
