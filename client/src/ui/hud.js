@@ -73,7 +73,10 @@ export function initHud({ onToggleShopChat, onOpenNotifications, items }) {
       e.stopPropagation(); // don't walk the character too
       buttons[Math.min(buttons.length - 1, Math.max(0, i + step))].focus();
     }
-    if (e.key === "Escape") closeMenu({ refocus: true });
+    if (e.key === "Escape") {
+      e.stopPropagation(); // this Esc closes the menu - it mustn't also stand you up from a table
+      closeMenu({ refocus: true });
+    }
   });
 
   document.addEventListener("click", (e) => {

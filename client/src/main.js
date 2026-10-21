@@ -1161,7 +1161,8 @@ function enterShop(roomId) {
 const interactPrompt = document.getElementById("interact-prompt");
 const interactBtn = document.getElementById("interact-btn");
 const leaveTableBtn = document.getElementById("leave-table-btn");
-leaveTableBtn.innerHTML = `${icon("log-out")}${strings.leaveTable}`;
+leaveTableBtn.innerHTML = `${icon("log-out")}${strings.leaveTable}<kbd class="key-hint" aria-hidden="true">Esc</kbd>`;
+leaveTableBtn.setAttribute("aria-keyshortcuts", "Escape");
 let currentNear = null;
 
 const PROMPT_LABELS = { table: strings.joinTable, board: strings.viewEvents, counter: strings.openShop };
@@ -1201,10 +1202,27 @@ async function actOnNear() {
 }
 
 interactBtn.addEventListener("click", actOnNear);
-leaveTableBtn.addEventListener("click", () => {
+function leaveTable() {
   currentWorld?.leaveTable();
   leaveTableBtn.hidden = true;
   setTableTab(false);
+}
+
+leaveTableBtn.addEventListener("click", leaveTable);
+
+// Esc stands up from the table - but only when nothing else claims Esc
+// (an open panel, the ⊞ menu or a dialog close themselves on it). In a
+// chat box, the first Esc just leaves the box, so a stray press while
+// typing never ends a match.
+window.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || !currentWorld?.currentTableId || gameScreen.hidden || e.repeat) return;
+  if (isTextInputFocused()) {
+    document.activeElement.blur();
+    return;
+  }
+  if (!shopKeysActive()) return;
+  e.preventDefault();
+  leaveTable();
 });
 
 // ---------- Touch: thumbstick + soft keyboard ----------
