@@ -17,6 +17,7 @@ import { createEventNotifier } from "../eventNotify.js";
 import { eventRole } from "../eventAccess.js";
 import * as judging from "../db/judging.js";
 import { publicJudgeCall, publicPenalty } from "./judging.js";
+import { pushStore } from "../services/push.js";
 import * as db from "../db/tournaments.js";
 import { createNotification, publicNotification } from "../db/notifications.js";
 import {
@@ -350,6 +351,8 @@ export function createTournamentsRouter(io) {
       res.json({
         event: publicEvent(event),
         myRole,
+        // Did this user answer "alerts for this event?" - null = not asked yet.
+        myPushConsent: await pushStore.getConsent(event.id, req.auth.userId),
         judges,
         ...(staff ? { openJudgeCalls: (await judging.listActiveJudgeCalls(event.id)).map(publicJudgeCall) } : {}),
         // Staff see every penalty; a player only their own.
@@ -476,11 +479,11 @@ export function createTournamentsRouter(io) {
       const target = `/events/${event.id}`;
       await Promise.all([
         ...result.entered.map((userId) =>
-          notifyUser(userId, { kind: "event_lottery_won", message: `You're in "${event.name}"!`, target })
+          notifyUser(userId, { eventId: event.id, kind: "event_lottery_won", message: `You're in "${event.name}"!`, target })
         ),
         ...result.waitlisted.map((userId, i) =>
           notifyUser(userId, {
-            kind: "event_lottery_waitlisted",
+            eventId: event.id, kind: "event_lottery_waitlisted",
             message: `"${event.name}" is full - you're #${i + 1} on the waitlist.`,
             target,
           })
@@ -514,7 +517,7 @@ export function createTournamentsRouter(io) {
       const { dropped, promoted } = await db.dropAndPromote(player.id);
       if (promoted) {
         await notifyUser(promoted.user_id, {
-          kind: "event_promoted",
+          eventId: event.id, kind: "event_promoted",
           message: `You're in "${event.name}" - a spot opened up.`,
           target: `/events/${event.id}`,
         });
@@ -526,6 +529,50 @@ export function createTournamentsRouter(io) {
   });
 
   // ---------- Start (closes registration, generates round 1) ----------
+
+  // ---------- Alerts (event day) ----------
+
+  tournamentsRouter.put("/:id/push-consent", async (req, res, next) => {
+    try {
+      const event = await db.getEventById(req.params.id);
+      if (!event) return res.status(404).json({ error: "Event not found." });
+      await pushStore.setConsent(event.id, req.auth.userId, req.body?.granted === true);
+      res.json({ granted: req.body?.granted === true });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // Each player in the current round gets their own table + opponent.
+  tournamentsRouter.post("/:id/notify-pairings", async (req, res, next) => {
+    try {
+      const event = await requireEventOwnerOrAdmin(req, res, req.params.id);
+      if (!event) return;
+      if (!RUNNING_STATUSES.includes(event.status)) return res.status(409).json({ error: "No round is being played." });
+      const players = await db.getPlayersForEvent(event.id);
+      const byId = new Map(players.map((p) => [p.id, p]));
+      const matches = await db.getMatchesForRound(event.id, event.current_phase, event.current_round);
+      const round = event.current_round;
+      const target = `/events/${event.id}`;
+      const jobs = [];
+      for (const m of matches) {
+        if (!m.player2_id) {
+          jobs.push([byId.get(m.player1_id), `Round ${round}: you have a bye`]);
+          continue;
+        }
+        const table = `Table ${m.table_number}${m.table_online ? " (online)" : ""}`;
+        jobs.push([byId.get(m.player1_id), `Round ${round}: ${table} vs ${byId.get(m.player2_id)?.display_name}`]);
+        jobs.push([byId.get(m.player2_id), `Round ${round}: ${table} vs ${byId.get(m.player1_id)?.display_name}`]);
+      }
+      const recipients = jobs.filter(([p]) => p && !p.dropped);
+      await Promise.all(
+        recipients.map(([p, message]) => notifyUser(p.user_id, { eventId: event.id, kind: "event_pairing", message, target }))
+      );
+      res.json({ sent: recipients.length });
+    } catch (err) {
+      next(err);
+    }
+  });
 
   // ---------- Check-in (event day) ----------
 

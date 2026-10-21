@@ -169,4 +169,35 @@ describe("event day", { skip: SKIP_REASON }, () => {
     assert.deepEqual(numbers, [1, 2, 3, 4]);
     assert.ok(body.currentRoundMatches.every((m) => m.tableOnline === false));
   });
+
+  test("alert consent is stored per event; pairing alerts reach every player with their own table", async () => {
+    const event = await createEvent({ maxPlayers: 4 });
+    await registerAll(event.id, players.slice(0, 4));
+    const key = await api.get("/notifications/push-key", players[0].token);
+    assert.equal(key.status, 200);
+    assert.equal(key.body.publicKey, null, "no VAPID keys in tests");
+    assert.equal((await api.put(`/events/${event.id}/push-consent`, players[0].token, { granted: true })).status, 200);
+    assert.equal((await api.get(`/events/${event.id}`, players[0].token)).body.myPushConsent, true);
+    assert.equal((await api.get(`/events/${event.id}`, players[1].token)).body.myPushConsent, null);
+    const sub = await api.post("/notifications/push-subscriptions", players[0].token, {
+      endpoint: "https://push.example/abc", keys: { p256dh: "BKey", auth: "auth" },
+    });
+    assert.equal(sub.status, 200);
+
+    await openCheckInAndApproveAll(api, owner.token, event.id);
+    await api.post(`/events/${event.id}/start`, owner.token);
+    assert.equal((await api.post(`/events/${event.id}/notify-pairings`, players[0].token)).status, 403);
+    const sent = await api.post(`/events/${event.id}/notify-pairings`, owner.token);
+    assert.equal(sent.status, 200, JSON.stringify(sent.body));
+    assert.equal(sent.body.sent, 4);
+    const { body } = await api.get(`/events/${event.id}`, owner.token);
+    for (const p of players.slice(0, 4)) {
+      const me = body.players.find((x) => x.userId === p.id);
+      const match = body.currentRoundMatches.find((m) => m.player1Id === me.id || m.player2Id === me.id);
+      const opp = body.players.find((x) => x.id === (match.player1Id === me.id ? match.player2Id : match.player1Id));
+      const notes = (await api.get("/notifications", p.token)).body.notifications.filter((n) => n.kind === "event_pairing");
+      assert.equal(notes.length, 1);
+      assert.equal(notes[0].message, `Round 1: Table ${match.tableNumber} vs ${opp.displayName}`);
+    }
+  });
 });

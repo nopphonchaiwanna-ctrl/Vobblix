@@ -27,9 +27,15 @@ export async function isJudge(eventId, userId) {
   return rows.length > 0;
 }
 
+/**
+ * This user's latest call on a match, with its age in ms measured by the
+ * database's own clock (`age_ms`) - the app server's clock can drift from
+ * the DB's, which would make a cooldown never (or always) expire.
+ */
 export async function lastCallBy(matchId, userId) {
   const { rows } = await pool.query(
-    `SELECT * FROM judge_calls WHERE match_id = $1 AND called_by = $2 ORDER BY created_at DESC LIMIT 1`,
+    `SELECT *, (EXTRACT(EPOCH FROM (now() - created_at)) * 1000)::float8 AS age_ms
+     FROM judge_calls WHERE match_id = $1 AND called_by = $2 ORDER BY created_at DESC LIMIT 1`,
     [matchId, userId]
   );
   return rows[0] || null;

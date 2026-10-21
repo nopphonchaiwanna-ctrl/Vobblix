@@ -109,7 +109,7 @@ export function createJudgingRouter(io) {
       if (player && !player.dropped) return res.status(409).json({ error: "Players in this event can't judge it." });
       await judging.addJudge(event.id, userId, req.auth.userId);
       await notifyUser(userId, {
-        kind: "event_judge_added",
+        eventId: event.id, kind: "event_judge_added",
         message: `You're a judge for "${event.name}".`,
         target: `/events/${event.id}`,
       });
@@ -147,7 +147,7 @@ export function createJudgingRouter(io) {
       if (!current) return res.status(409).json({ error: "This match isn't being played right now." });
 
       const last = await judging.lastCallBy(match.id, req.auth.userId);
-      const waitMs = last ? RECALL_COOLDOWN_MS - (Date.now() - new Date(last.created_at).getTime()) : 0;
+      const waitMs = last ? RECALL_COOLDOWN_MS - last.age_ms : 0;
       if (waitMs > 0) {
         return res.status(429).json({ error: "A judge is on the way - you can call again shortly.", retryAfterSeconds: Math.ceil(waitMs / 1000) });
       }
@@ -159,7 +159,7 @@ export function createJudgingRouter(io) {
       await Promise.all(
         [...new Set(staff)].map(async (userId) => {
           await notifyUser(userId, {
-            kind: "judge_call",
+            eventId: event.id, kind: "judge_call",
             message: `${table} needs a judge - ${event.name}`,
             target: `/events/${event.id}?call=${call.id}`,
           });
@@ -228,7 +228,7 @@ export function createJudgingRouter(io) {
       });
       if (penalty.status === "confirmed") await applyPenalty(event, penalty, req.auth.userId);
       await notifyUser(player.user_id, {
-        kind: "event_penalty",
+        eventId: event.id, kind: "event_penalty",
         message: `${event.name}: you received ${LEVEL_LABEL[level]}${penalty.status === "pending" ? " (pending the organizer)" : ""} - ${reason}`,
         target: `/events/${event.id}`,
       });

@@ -50,3 +50,11 @@ services:
         sync: false
       - key: CLOUDFLARE_TURN_API_TOKEN
         sync: false
+      # Web Push for event alerts (docs/deploy.md "แจ้งเตือนเด้งเข้ามือถือ").
+      # Leave empty and the site works - just no phone alerts.
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_SUBJECT
+        sync: false

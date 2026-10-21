@@ -161,6 +161,7 @@ export function apiFor(server) {
     get: (p, token) => call("GET", p, token),
     post: (p, token, body) => call("POST", p, token, body),
     patch: (p, token, body) => call("PATCH", p, token, body),
+    put: (p, token, body) => call("PUT", p, token, body),
     delete: (p, token) => call("DELETE", p, token),
     async login(email, password = TEST_PASSWORD) {
       const r = await call("POST", "/auth/login", null, { email, password });
