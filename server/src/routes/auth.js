@@ -28,6 +28,7 @@ import {
   consumePasswordResetToken,
 } from "../db/tokens.js";
 import { sendEmail, verificationEmail, passwordResetEmail } from "../email.js";
+import { normalizeAvatarConfig } from "../avatarConfig.js";
 
 export const authRouter = Router();
 
@@ -100,7 +101,7 @@ authRouter.post("/login", loginLimiter, async (req, res, next) => {
     const cleanEmail = (email || "").trim().toLowerCase();
 
     const { rows } = await pool.query(
-      "SELECT id, email, display_name, avatar_url, role, password_hash, email_verified_at FROM users WHERE email = $1 AND deleted_at IS NULL",
+      "SELECT id, email, display_name, avatar_url, avatar_config, role, password_hash, email_verified_at FROM users WHERE email = $1 AND deleted_at IS NULL",
       [cleanEmail]
     );
     const user = rows[0];
@@ -201,7 +202,7 @@ authRouter.post("/reset-password", async (req, res, next) => {
 authRouter.get("/me", requireAuth, async (req, res, next) => {
   try {
     const { rows } = await pool.query(
-      "SELECT id, email, display_name, avatar_url, role FROM users WHERE id = $1",
+      "SELECT id, email, display_name, avatar_url, avatar_config, role FROM users WHERE id = $1",
       [req.auth.userId]
     );
     if (!rows[0]) return res.status(401).json({ error: "Not authenticated." });
@@ -242,6 +243,14 @@ authRouter.patch("/me", requireAuth, async (req, res, next) => {
       updates.avatarUrl = avatarUrl || null;
     }
 
+    if (req.body?.avatarConfig !== undefined) {
+      try {
+        updates.avatarConfig = normalizeAvatarConfig(req.body.avatarConfig);
+      } catch {
+        return res.status(400).json({ error: "Invalid character choice." });
+      }
+    }
+
     if (Object.keys(updates).length === 0) {
       return res.status(400).json({ error: "Nothing to update." });
     }
@@ -259,6 +268,7 @@ function toPublicUser(row) {
     email: row.email,
     displayName: row.display_name,
     avatarUrl: row.avatar_url || null,
+    avatarConfig: row.avatar_config || null,
     role: row.role,
   };
 }

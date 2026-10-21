@@ -1,4 +1,3 @@
-import { isWithinTableRange } from "./tableRange.js";
 import http from "node:http";
 import express from "express";
 import cors from "cors";
@@ -7,7 +6,8 @@ import { Server } from "socket.io";
 
 import { resolveScene } from "./scenes/index.js";
 import { verifyToken } from "./auth.js";
-import { getAvatarUrl, isActiveUser } from "./db/users.js";
+import { getAvatarProfile, isActiveUser } from "./db/users.js";
+import { isWithinTableRange } from "./tableRange.js";
 import { authRouter } from "./routes/auth.js";
 import { ownerApplicationsRouter } from "./routes/ownerApplications.js";
 import { accountRouter } from "./routes/account.js";
@@ -158,12 +158,15 @@ io.use(async (socket, next) => {
   // in Settings shows up on the next shop join/reconnect rather than
   // only after a full re-login (an improvement over the displayName
   // staleness trade-off this app already accepted).
+  // Same for the 3D character pick (avatarConfig, migration 019).
   try {
-    user.avatarUrl = await getAvatarUrl(user.userId);
+    Object.assign(user, await getAvatarProfile(user.userId));
   } catch {
-    user.avatarUrl = null; // a DB hiccup shouldn't block login - worst case, no avatar sprite this session
+    // a DB hiccup shouldn't block login - worst case, default look this session
+    user.avatarUrl = null;
+    user.avatarConfig = null;
   }
-  socket.user = user; // { userId, displayName, avatarUrl }
+  socket.user = user; // { userId, displayName, avatarUrl, avatarConfig }
   next();
 });
 
@@ -257,7 +260,8 @@ io.on("connection", (socket) => {
         socket.user.userId,
         socket.user.displayName,
         socket.user.avatarUrl,
-        spawn
+        spawn,
+        socket.user.avatarConfig
       );
       socketMeta.set(socket.id, {
         roomId: cleanRoomId,

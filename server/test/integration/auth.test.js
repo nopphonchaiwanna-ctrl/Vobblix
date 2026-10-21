@@ -1,6 +1,6 @@
 import { describe, test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { SKIP_REASON, resetDatabase, startServer, apiFor, TEST_PASSWORD } from "./helpers.js";
+import { SKIP_REASON, resetDatabase, startServer, apiFor, TEST_PASSWORD, createAndLogin } from "./helpers.js";
 
 describe("auth + HTTP error handling", { skip: SKIP_REASON }, () => {
   let server;
@@ -31,6 +31,19 @@ describe("auth + HTTP error handling", { skip: SKIP_REASON }, () => {
     const me = await api.get("/auth/me", token2);
     assert.equal(me.status, 200);
     assert.equal(me.body.user.displayName, "New Player");
+  });
+
+  test("PATCH /me saves an avatar config and /me returns it", async () => {
+    const { token } = await createAndLogin(api, { email: "avatar@test.local" });
+    const saved = await api.patch("/auth/me", token, { avatarConfig: { character: "male-a", color: "#22C55E" } });
+    assert.equal(saved.status, 200, JSON.stringify(saved.body));
+    assert.deepEqual(saved.body.user.avatarConfig, { v: 1, character: "male-a", color: "#22c55e" });
+    const me = await api.get("/auth/me", token);
+    assert.deepEqual(me.body.user.avatarConfig, { v: 1, character: "male-a", color: "#22c55e" });
+
+    const bad = await api.patch("/auth/me", token, { avatarConfig: { character: "x", color: "nope" } });
+    assert.equal(bad.status, 400);
+    assert.equal(bad.body.error, "Invalid character choice.");
   });
 
   test("register rejects weak passwords and duplicate emails", async () => {

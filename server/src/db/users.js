@@ -11,7 +11,7 @@ import { pool } from "./pool.js";
  * so a caller can send just `{ displayName }` without clobbering
  * avatar_url, or vice versa.
  */
-export async function updateProfile(userId, { displayName, avatarUrl }) {
+export async function updateProfile(userId, { displayName, avatarUrl, avatarConfig }) {
   const sets = [];
   const values = [userId];
 
@@ -23,9 +23,13 @@ export async function updateProfile(userId, { displayName, avatarUrl }) {
     values.push(avatarUrl);
     sets.push(`avatar_url = $${values.length}`);
   }
+  if (avatarConfig !== undefined) {
+    values.push(avatarConfig === null ? null : JSON.stringify(avatarConfig));
+    sets.push(`avatar_config = $${values.length}`);
+  }
   if (sets.length === 0) {
     const { rows } = await pool.query(
-      "SELECT id, email, display_name, avatar_url, role FROM users WHERE id = $1",
+      "SELECT id, email, display_name, avatar_url, avatar_config, role FROM users WHERE id = $1",
       [userId]
     );
     return rows[0];
@@ -33,7 +37,7 @@ export async function updateProfile(userId, { displayName, avatarUrl }) {
 
   const { rows } = await pool.query(
     `UPDATE users SET ${sets.join(", ")} WHERE id = $1
-     RETURNING id, email, display_name, avatar_url, role`,
+     RETURNING id, email, display_name, avatar_url, avatar_config, role`,
     values
   );
   return rows[0];
@@ -61,9 +65,9 @@ export async function markEmailVerified(userId) {
   await pool.query("UPDATE users SET email_verified_at = now() WHERE id = $1", [userId]);
 }
 
-export async function getAvatarUrl(userId) {
-  const { rows } = await pool.query("SELECT avatar_url FROM users WHERE id = $1", [userId]);
-  return rows[0]?.avatar_url || null;
+export async function getAvatarProfile(userId) {
+  const { rows } = await pool.query("SELECT avatar_url, avatar_config FROM users WHERE id = $1", [userId]);
+  return { avatarUrl: rows[0]?.avatar_url || null, avatarConfig: rows[0]?.avatar_config || null };
 }
 
 /** false for a deleted (anonymized, migration 017) or missing account. */

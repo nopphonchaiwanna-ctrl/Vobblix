@@ -55,7 +55,7 @@ export function signToken(user) {
  * already-open socket connection after the next login.
  *
  * avatarUrl deliberately does NOT live in the token (it used to -
- * see db/users.js's getAvatarUrl() and index.js's io.use() for where
+ * see db/users.js's getAvatarProfile() and index.js's io.use() for where
  * it's fetched instead): avatars can now be a resized photo encoded as
  * a data: URL, tens of KB, and Node's default max HTTP header size is
  * only ~16KB. Baking that into the JWT would blow past that the moment

@@ -19,6 +19,7 @@ const shops = new Map(); // roomId -> { players: Map<socketId, Player> }
  * @property {number} y
  * @property {string|null} tableId table the player currently counts as "at"
  * @property {string} color hex color assigned on join, for the fallback avatar circle
+ * @property {object|null} avatarConfig 3D character pick {v, character, color} (see avatarConfig.js), null = default
  * @property {string|null} avatarUrl profile picture URL (from Settings), if any - used as the on-floor sprite when the client can load it
  * @property {boolean} inCall whether they've opted into this table's voice call
  * @property {boolean} videoOn whether their camera is on within that call
@@ -42,17 +43,18 @@ export function getShop(roomId) {
   return shops.get(roomId);
 }
 
-export function addPlayer(roomId, socketId, userId, name, avatarUrl, spawn) {
+export function addPlayer(roomId, socketId, userId, name, avatarUrl, spawn, avatarConfig = null) {
   const shop = getShop(roomId);
   const player = {
     id: socketId,
     userId,
     name: name.slice(0, 24) || "Guest",
     avatarUrl: avatarUrl || null,
+    avatarConfig,
     x: spawn.x,
     y: spawn.y,
     tableId: null,
-    color: colorFor(shop.players.size),
+    color: avatarConfig?.color || colorFor(shop.players.size),
     inCall: false,
     videoOn: false,
     micMuted: false,
