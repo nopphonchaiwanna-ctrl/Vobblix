@@ -1,7 +1,7 @@
 // Event day: waitlist, lottery, check-in, start roster, tables, pairing alerts.
 import { describe, test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { SKIP_REASON, resetDatabase, startServer, apiFor, createAndLogin, createPublishedShop, socketFor, openCheckInAndApproveAll, FUTURE_START } from "./helpers.js";
+import { SKIP_REASON, resetDatabase, startServer, apiFor, createAndLogin, createPublishedShop, socketFor, openCheckInAndApproveAll, withDb, FUTURE_START } from "./helpers.js";
 
 describe("event day", { skip: SKIP_REASON }, () => {
   let server;
@@ -50,6 +50,47 @@ describe("event day", { skip: SKIP_REASON }, () => {
     assert.equal(ok.status, 201);
     assert.equal(ok.body.event.startsAt, FUTURE_START);
     assert.equal(ok.body.event.registrationOpen, true);
+  });
+
+  const startInPast = (eventId) =>
+    withDb((db) => db.query("UPDATE tournament_events SET starts_at = now() - interval '1 minute' WHERE id = $1", [eventId]));
+
+  test("registration closes at the start time; entrants can still check in", async () => {
+    const event = await createEvent();
+    for (const p of players.slice(0, 2)) assert.equal((await api.post(`/events/${event.id}/register`, p.token)).status, 201);
+    await startInPast(event.id);
+    assert.equal((await api.get(`/events/${event.id}`, players[2].token)).body.event.registrationOpen, false);
+    const late = await api.post(`/events/${event.id}/register`, players[2].token);
+    assert.equal(late.status, 409);
+    assert.equal(late.body.error, "Registration is closed for this event.");
+    assert.equal((await api.post(`/events/${event.id}/check-in/open`, owner.token)).status, 200);
+    assert.equal((await api.post(`/events/${event.id}/check-in`, players[0].token)).status, 200);
+  });
+
+  test("pushing the start later reopens registration", async () => {
+    const event = await createEvent();
+    await startInPast(event.id);
+    assert.equal((await api.post(`/events/${event.id}/register`, players[2].token)).status, 409);
+    const base = { name: "Day", game: "vanguard", vanguardRegion: "th", vanguardRegulation: "d_standard", format: "swiss_only", maxPlayers: 4, drawRule: "double_loss" };
+    const r = await api.patch(`/events/${event.id}`, owner.token, { ...base, startsAt: FUTURE_START });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.event.registrationOpen, true);
+    assert.equal((await api.post(`/events/${event.id}/register`, players[2].token)).status, 201);
+  });
+
+  test("check-in edits: name, round time and start time only", async () => {
+    const event = await createEvent({ maxPlayers: 4 });
+    await api.post(`/events/${event.id}/check-in/open`, owner.token);
+    const later = new Date(Date.now() + 9 * 86_400_000).toISOString();
+    const r = await api.patch(`/events/${event.id}`, owner.token, { name: "Renamed", roundTimeLimitMinutes: 30, startsAt: later, maxPlayers: 8 });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.equal(r.body.event.name, "Renamed");
+    assert.equal(r.body.event.roundTimeLimitMinutes, 30);
+    assert.equal(r.body.event.startsAt, later);
+    assert.equal(r.body.event.maxPlayers, 4, "other settings stay locked");
+    const bad = await api.patch(`/events/${event.id}`, owner.token, { name: "Renamed", startsAt: "soon" });
+    assert.equal(bad.status, 400);
+    assert.equal(bad.body.error, "Choose the event's start date and time.");
   });
 
   test("first come: the 5th is waitlisted, and moves up when someone drops", async () => {

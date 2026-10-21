@@ -111,17 +111,18 @@ export async function cancelEvent(eventId) {
  */
 export async function updateEventSettings(
   eventId,
-  { name, game, format, configuredCutSize, drawRule, maxPlayers, roundTimeLimitMinutes, registrationMode, vanguardRegion, vanguardRegulation }
+  { name, game, format, configuredCutSize, drawRule, maxPlayers, roundTimeLimitMinutes, registrationMode, vanguardRegion, vanguardRegulation, startsAt = null }
 ) {
   const { rows } = await pool.query(
     `UPDATE tournament_events
      SET name = $2, game = $3, format = $4, configured_cut_size = $5, draw_rule = $6,
          max_players = $7, round_time_limit_minutes = $8,
-         registration_mode = $9, vanguard_region = $10, vanguard_regulation = $11
+         registration_mode = $9, vanguard_region = $10, vanguard_regulation = $11,
+         starts_at = COALESCE($12, starts_at)
      WHERE id = $1 AND status = 'registration'
      RETURNING *`,
     [eventId, name, game, format, configuredCutSize ?? null, drawRule, maxPlayers, roundTimeLimitMinutes ?? null,
-      registrationMode, vanguardRegion, vanguardRegulation]
+      registrationMode, vanguardRegion, vanguardRegulation, startsAt]
   );
   return rows[0] || null;
 }
@@ -133,6 +134,17 @@ export async function updateEventBasics(eventId, { name, roundTimeLimitMinutes }
      WHERE id = $1 AND status IN ('swiss', 'bracket')
      RETURNING *`,
     [eventId, name, roundTimeLimitMinutes ?? null]
+  );
+  return rows[0] || null;
+}
+
+/** During check-in: the name, round time limit and start time (null keeps it). */
+export async function updateEventCheckInBasics(eventId, { name, roundTimeLimitMinutes, startsAt = null }) {
+  const { rows } = await pool.query(
+    `UPDATE tournament_events SET name = $2, round_time_limit_minutes = $3, starts_at = COALESCE($4, starts_at)
+     WHERE id = $1 AND status = 'check_in'
+     RETURNING *`,
+    [eventId, name, roundTimeLimitMinutes ?? null, startsAt]
   );
   return rows[0] || null;
 }

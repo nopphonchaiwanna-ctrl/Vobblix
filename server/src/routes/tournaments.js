@@ -388,13 +388,19 @@ export function createTournamentsRouter(io) {
   // ---------- Edit / cancel (owner, admin) ----------
 
   // While registration is open every setting can change (the player limit
-  // can't drop below who's already in). Once rounds are running only the
-  // name and round time limit can - format, cut and draw rule already
-  // shaped the pairings and standings.
+  // can't drop below who's already in). During check-in the field is set,
+  // so only the name, round time limit and start time can. Once rounds are
+  // running only the name and round time limit can - format, cut and draw
+  // rule already shaped the pairings and standings. A missing startsAt
+  // keeps the current one (older events may have none); a past one is
+  // allowed here and simply closes registration.
   tournamentsRouter.patch("/:id", async (req, res, next) => {
     try {
       const event = await requireEventOwnerOrAdmin(req, res, req.params.id);
       if (!event) return;
+
+      const startsAt = parseStartsAt(req.body?.startsAt);
+      if (startsAt === undefined) return res.status(400).json({ error: STARTS_AT_ERROR });
 
       if (event.status === "registration") {
         const parsed = parseEventSettings(req.body);
@@ -406,7 +412,7 @@ export function createTournamentsRouter(io) {
         if (parsed.fields.maxPlayers < activeCount) {
           return res.status(409).json({ error: `${activeCount} players are already registered - the limit can't go below that.` });
         }
-        const updated = await db.updateEventSettings(event.id, parsed.fields);
+        const updated = await db.updateEventSettings(event.id, { ...parsed.fields, startsAt });
         if (!updated) return res.status(409).json({ error: "This event has just started - reload and try again." });
         if ((updated.max_players ?? 0) > (event.max_players ?? 0)) {
           for (const p of await db.promoteWaitlistUpToLimit(event.id)) {
@@ -418,6 +424,16 @@ export function createTournamentsRouter(io) {
             });
           }
         }
+        return res.json({ event: publicEvent(updated) });
+      }
+
+      if (event.status === "check_in") {
+        const name = (req.body?.name || "").trim().slice(0, 80);
+        const roundTimeLimitMinutes = parseRoundTimeLimit(req.body?.roundTimeLimitMinutes);
+        if (!name) return res.status(400).json({ error: "Enter an event name." });
+        if (roundTimeLimitMinutes === undefined) return res.status(400).json({ error: ROUND_TIME_LIMIT_ERROR });
+        const updated = await db.updateEventCheckInBasics(event.id, { name, roundTimeLimitMinutes, startsAt });
+        if (!updated) return res.status(409).json({ error: "This event has just started - reload and try again." });
         return res.json({ event: publicEvent(updated) });
       }
 
@@ -479,7 +495,8 @@ export function createTournamentsRouter(io) {
       const event = await db.getEventById(req.params.id);
       if (!event) return res.status(404).json({ error: "Event not found." });
       // During check-in the field is set - newcomers can only join the waitlist.
-      if (event.status !== "registration" && event.status !== "check_in") {
+      // Closed once the event's start time passes, too (lobby-events §4.3).
+      if (!registrationOpen(event, new Date())) {
         return res.status(409).json({ error: "Registration is closed for this event." });
       }
       if (await judging.isJudge(event.id, req.auth.userId)) {
