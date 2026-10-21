@@ -646,3 +646,51 @@ export async function listUpcomingEvents({ q = null, game = null, window = null,
   );
   return rows;
 }
+
+// ---------- Match history ----------
+
+// "Played" = entered, showed up and has at least one match - a player
+// who withdrew before the start keeps an 'entered' row with no matches.
+const PLAYED = `tp.entry_status = 'entered' AND NOT tp.no_show
+  AND EXISTS (SELECT 1 FROM tournament_matches pm WHERE pm.player1_id = tp.id OR pm.player2_id = tp.id)`;
+
+/**
+ * The raw rows behind one user's match history (match-history design
+ * §4, §8.2): their finished events, every match they were in and their
+ * penalties - three queries however many events there are.
+ */
+export async function listMatchHistoryRows(userId) {
+  const { rows: events } = await pool.query(
+    `SELECT e.id, e.name, e.game, e.vanguard_region, e.vanguard_regulation, e.starts_at, e.started_at,
+            e.effective_cut_size, s.name AS shop_name, s.code AS shop_code,
+            tp.id AS my_player_id, tp.final_rank, tp.final_label, tp.dropped,
+            (SELECT count(*) FROM tournament_players tp2 WHERE tp2.event_id = e.id
+               AND ${PLAYED.replaceAll("tp.", "tp2.")})::int AS played_count
+     FROM tournament_players tp
+     JOIN tournament_events e ON e.id = tp.event_id AND e.status = 'completed'
+     JOIN shops s ON s.id = e.shop_id
+     WHERE tp.user_id = $1 AND ${PLAYED}
+     ORDER BY e.completed_at DESC
+     LIMIT 200`,
+    [userId]
+  );
+  const playerIds = events.map((e) => e.my_player_id);
+  if (!playerIds.length) return { events, matches: [], penalties: [] };
+
+  const { rows: matches } = await pool.query(
+    `SELECT m.id, m.event_id, m.phase, m.round_number, m.player1_id, m.player2_id, m.result,
+            CASE WHEN ou.deleted_at IS NOT NULL THEN 'Deleted player' ELSE ou.display_name END AS opponent_name
+     FROM tournament_matches m
+     LEFT JOIN tournament_players op
+       ON op.id = CASE WHEN m.player1_id = ANY($1::uuid[]) THEN m.player2_id ELSE m.player1_id END
+     LEFT JOIN users ou ON ou.id = op.user_id
+     WHERE m.player1_id = ANY($1::uuid[]) OR m.player2_id = ANY($1::uuid[])`,
+    [playerIds]
+  );
+  const { rows: penalties } = await pool.query(
+    `SELECT player_id, match_id, level, reason, status, created_at FROM event_penalties
+     WHERE player_id = ANY($1::uuid[]) ORDER BY created_at`,
+    [playerIds]
+  );
+  return { events, matches, penalties };
+}

@@ -12,6 +12,7 @@ import { userIdsInRoom } from "../rooms.js";
 import { startingRoster } from "../tournament/entry.js";
 import { assignTables } from "../tournament/tables.js";
 import { parseStartsAt, registrationOpen, upcomingWindow } from "../tournament/schedule.js";
+import { buildHistoryEntry } from "../tournament/history.js";
 import { refreshEventTables } from "../eventTables.js";
 import { createEventNotifier } from "../eventNotify.js";
 import { eventRole } from "../eventAccess.js";
@@ -365,6 +366,28 @@ export function createTournamentsRouter(io) {
         now,
       });
       res.json({ events: rows.map(publicUpcomingEvent) });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // The caller's own finished events, round by round (match-history
+  // design §8.1). Only ever req.auth.userId - nobody can read another
+  // player's history. Registered before /:id so "history" isn't an id.
+  tournamentsRouter.get("/history", async (req, res, next) => {
+    try {
+      const { events, matches, penalties } = await db.listMatchHistoryRows(req.auth.userId);
+      res.json({
+        events: events.map((e) =>
+          buildHistoryEntry({
+            event: e,
+            me: { id: e.my_player_id, final_rank: e.final_rank, final_label: e.final_label, dropped: e.dropped },
+            matches: matches.filter((m) => m.player1_id === e.my_player_id || m.player2_id === e.my_player_id),
+            penalties: penalties.filter((p) => p.player_id === e.my_player_id),
+            playedCount: e.played_count,
+          })
+        ),
+      });
     } catch (err) {
       next(err);
     }
