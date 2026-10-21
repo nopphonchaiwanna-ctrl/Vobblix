@@ -1,7 +1,7 @@
 # VobbLiX — notes for Claude
 
 Walk-around virtual card shop (formerly "Card Cafe" — never use the old
-name). Players walk a 2D shop, sit at tables to chat/voice/video, join shop
+name). Players walk a 3D shop, sit at tables to chat/voice/video, join shop
 events (Swiss + top cut), import Decklog decks, and browse a Vanguard card
 catalog with Thai translations. Shop owners apply, get reviewed, run a shop,
 list items, and organize events. Admins review and create "central" shops.
@@ -25,8 +25,10 @@ installed under `.claude/skills/impeccable`). How the code works lives in
   machine default).
 
 ## Stack & layout
-- `client/` — Phaser 3 + Vite + vanilla JS (ES modules). No UI framework.
-  Game scene `src/scenes/ShopScene.js`; everything else is DOM overlaid on
+- `client/` — Three.js + Vite + vanilla JS (ES modules). No UI framework.
+  3D shop `src/scene3d/ShopWorld.js` (pure, unit-tested logic beside it;
+  CC0 models in `public/models/` + `CREDITS.md` - never art from another
+  game); everything else is DOM overlaid on
   the canvas (`src/ui/*.js`, markup in `index.html`, one `src/style.css`).
   Client-side router `src/router.js` (route handlers must be idempotent
   re-renders; `navigate()` always resolves, even to the current path).
@@ -43,6 +45,8 @@ installed under `.claude/skills/impeccable`). How the code works lives in
 - `cd server && npm run migrate` — applies `server/migrations/NNN_*.sql`
   in order; tracked by filename in `schema_migrations`, never re-runs one.
 - `cd client && npm run build` — production build check.
+- `cd client && npm test` - client unit tests (node:test, pure modules in
+  `src/scene3d/` and `src/ui/bigScreen.js`).
 - `cd server && npm test` - unit tests (no DB). `npm run
   test:integration` - real server + Postgres; needs `TEST_DATABASE_URL`
   in `server/.env` (a disposable local DB, wiped every run - here
@@ -101,7 +105,9 @@ deploy (code side ready: `render.yaml`, TURN via
 `services/iceServers.js`, 720p video; the user follows `docs/deploy.md`
 for the Render / Cloudflare Pages / Neon `production` branch accounts),
 6. Thai/English i18n.
-1. Neon is at migration 018 (017: users.deleted_at, deletion-request
+1. Neon is at migration 018 - **019 (users.avatar_config, 3D shop
+   characters) must be run before deploying the 3D client/server**.
+   (017: users.deleted_at, deletion-request
    processing columns, the `default` room row; 018: owned shops get
    scene_type 'owned' so 111/222 draw their chosen layout/theme).
 2. Get a real `decklog_jp` deck code to test that source end-to-end.

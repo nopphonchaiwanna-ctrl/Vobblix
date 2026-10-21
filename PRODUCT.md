@@ -8,7 +8,7 @@ web
 
 ## Users
 Two primary groups, weighted equally:
-- **Card players in Thailand** (Cardfight!! Vanguard first; other card games planned). They walk around a shared 2D shop, sit at tables to chat/voice/video with the people at that table, register for and play in shop events, and import their decks.
+- **Card players in Thailand** (Cardfight!! Vanguard first; other card games planned). They walk around a shared 3D shop, sit at tables to chat/voice/video with the people at that table, register for and play in shop events, and import their decks.
 - **Card-shop owners.** They apply to become an owner, set up one shop (template + theme + logo, reviewed by an admin), list items for sale, and organize events (Swiss + optional top cut).
 - Secondary: **admins**, who review owner applications and shops, and create official "central" shops.
 
@@ -26,7 +26,7 @@ Not a chat app, not a deck-builder, not a marketplace alone: a *place*. Shops ar
 - Buying/selling is negotiated in an order chat; there is no payment gateway.
 
 ## Capabilities and Constraints
-- Stack (existing): Phaser 3 + Vite + vanilla JS (ES modules) client, DOM UI overlaid on the canvas; Node/Express + Socket.io + Postgres server. No UI framework.
+- Stack (existing): Three.js + Vite + vanilla JS (ES modules) client, DOM UI overlaid on the canvas; Node/Express + Socket.io + Postgres server. No UI framework.
 - Dark theme is the default; a light theme toggle exists.
 - Multi-game is planned: UI and data must not assume Vanguard is the only game (events already carry a `game` field).
 - **UI language: must support both Thai and English** (planned, not built yet; current UI copy is English-only). Card text is Japanese with Thai translations.

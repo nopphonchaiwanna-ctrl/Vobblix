@@ -7,18 +7,22 @@ whoever's at that table.
 
 ## Features in this MVP
 
-- Multiplayer 2D floor rendered with **Phaser 3**, synced in real time
-  over **Socket.io**
+- Multiplayer **3D card shop** rendered with **Three.js** — cute
+  characters walking a themed shop with tables, a counter (the shop's
+  listings) and an events board — synced in real time over
+  **Socket.io**; playable on desktop (WASD/arrows) and phones held
+  sideways (on-screen thumbstick). See "The 3D shop" below
 - **Accounts** (email + password, with mandatory email verification
   and a password-reset flow) — a player logs in once and their display
   name follows their account; no more retyping a name per visit (see
   "Mandatory email verification & password reset" below)
 - Shop-wide text chat, visible to everyone in the room
-- **Table-scoped text chat** — only players standing at the same table
-  see it (proximity-based, no manual "join" step needed)
+- **Table-scoped text chat** — walk up to a table and press "Join
+  table"; only players who joined the same table see it
 - **Table-scoped voice/video calls** (WebRTC mesh, no media server) — up
   to 10 people can talk at once per table, up to 4 of them with camera
-  on; joining is an explicit button press, never automatic
+  on; joining a table joins its call with the mic on and the camera off,
+  and while seated the opponent's camera fills the screen
 - Multiple independent shops, entered by their shop code in the lobby
   (published owner shops, admin "central" shops, and the `default`
   room) - share a code with friends to land in the same room
@@ -31,8 +35,8 @@ whoever's at that table.
   once published they can list items for sale, and a buyer opens a
   persisted order-chat thread with the seller to arrange it (see
   "Becoming a shop owner" below)
-- No art assets required to run it — avatars and tables are drawn
-  procedurally, so it's easy to reskin later
+- Only **CC0** 3D art (Kenney), listed file by file in
+  `client/public/models/CREDITS.md` — nothing from any commercial game
 
 ## Architecture
 
@@ -52,11 +56,15 @@ port1_playground/
 │   ├── scripts/          `migrate.js` + `set-role.js` (promote an
 │   │                     account to shop_owner/admin - see below)
 │   └── migrations/       SQL schema, applied with `npm run migrate`
-└── client/     Vite + Phaser 3 — rendering, input, and the chat UI overlay
+└── client/     Vite + Three.js — the 3D shop, input, and the DOM UI over it
+    ├── src/scene3d/ The 3D shop (ShopWorld.js) plus small pure modules
+    │                 (movement, interactables, joystick, ...) tested with
+    │                 `npm test`
+    ├── public/models/ CC0 models + CREDITS.md
     ├── src/webrtc/  Mesh WebRTC call logic (client/src/webrtc/callManager.js)
-    └── src/ui/      Panel logic: chat, call, and the marketplace screens
-                      (ownerDashboard, adminPanel, ordersPanel, orderThread,
-                      shopListings)
+    └── src/ui/      Panel logic: chat, call, the in-shop HUD, and the
+                      marketplace screens (ownerDashboard, adminPanel,
+                      ordersPanel, orderThread, shopListings)
 ```
 
 The two are separate npm packages so they can be deployed independently
@@ -65,7 +73,7 @@ later (e.g. client on a static host, server on a small VM/container).
 The server is the single source of truth for floor layout: every shop's
 table positions and floor size live in `server/src/scenes/`, and the
 client receives them at join time as part of the `join-shop` ack (see
-`ShopScene.init()` in `client/src/scenes/ShopScene.js`). The client never
+`enterShop()` in `client/src/main.js` and `client/src/scene3d/ShopWorld.js`). The client never
 hardcodes a layout, so adding a shop or event doesn't touch client code.
 
 The server is also the only thing that talks to Postgres — the client
@@ -87,6 +95,12 @@ enters shops that already exist (`getShopByCode()` in
 shop with that code" rather than creating a room. A new plain room is
 therefore a row inserted by a migration (as 017 does for `default`),
 and owner shops come from the shop-owner flow.
+
+`resolveScene()` adds the same front strip to every floor: the top
+`FRONT_STRIP_H` (200px) holds the counter (`COUNTER`) and the events
+board (`BOARD`), tables shift down by that much, and players spawn there
+(`SPAWN`). A new scene file only lists its tables; a unit test checks
+that the counter and board never overlap any table's join radius.
 
 If a future event needs more than a different floor — a countdown
 timer, special walk-in rules, decorations with their own logic — see
@@ -285,7 +299,7 @@ An owner does **not** draw their own floor layout. They pick:
 `resolveScene(shop)` in `server/src/scenes/index.js` turns a shop row
 into the same `{ FLOOR_WIDTH, FLOOR_HEIGHT, TABLES, theme, assets }`
 shape an ad-hoc scene file produces, so nothing downstream (join-shop,
-`ShopScene.js`) needs to know whether a shop came from a static scene
+the 3D client) needs to know whether a shop came from a static scene
 file or an owner's template pick. This was the deliberate trade-off over
 letting owners upload/arrange arbitrary layouts: no bespoke editor UI to
 build, no image-moderation surface for a whole scene background, and no
@@ -508,6 +522,37 @@ npm run dev:server
 npm run dev:client
 ```
 
+## The 3D shop
+
+`client/src/scene3d/ShopWorld.js` owns the WebGL renderer, the room,
+every character, and the shop's presence socket events. Positions stay
+in the server's floor pixels everywhere; drawing maps them onto the
+X/Z plane at 1px = 1cm (`coords.js`). The logic that decides things
+(walking + collision, what you're standing at, the thumbstick, which
+character to draw, which call tile goes on the big screen) lives in
+small DOM-free modules with unit tests (`cd client && npm test`).
+
+- **Room**: walls/floor painted from the shop's theme (`themes.js`),
+  Kenney furniture for tables, the counter and shelves, and an events
+  board drawn in code.
+- **Characters**: 12 Kenney Mini Characters with idle/walk animation and
+  a name tag. A player picks one plus an outfit color in Settings
+  (`users.avatar_config`, migration 019); it shows from their next shop
+  visit. Unknown ids fall back to the default character.
+- **HUD** (`ui/hud.js`): inside a shop the topbar steps aside; top-right
+  has shop chat (with an unread count), notifications, and a 3x3 menu
+  (shop listings, events, orders, decks, settings, theme, my shop,
+  leave). Panels opened from it open *over* the running shop
+  (`ui/screens.js`), so a seat and a live call survive.
+- **Seated** (`body.seated`): the camera moves in over the table, the
+  call panel covers the view with one big tile (by default the first
+  other player with a camera on - `ui/bigScreen.js`; click a tile to pin
+  it) and the table chat beside it.
+- **Phones**: landscape only (an overlay asks to rotate), a thumbstick
+  for walking, and a compact seated layout.
+- **Assets**: `client/public/models/`, CC0 only, every file listed in
+  `CREDITS.md`. Never add art from another game.
+
 ## How it works
 
 - A player registers/logs in first; the client keeps the returned token
@@ -516,13 +561,17 @@ npm run dev:client
 - On join, the client asks the server for the current room state
   (`join-shop`) and gets back the scene type, floor size, table layout,
   everyone already there, and the shop's recent chat history.
-- Movement is client-authoritative and broadcast to the room about
-  20x/second (`move`); collision against tables is checked locally on
-  each client.
-- Walking within a table's radius automatically joins that table's
-  Socket.io room (`join-table` / `leave-table` on the server), which
-  scopes `table-chat` messages to just that group and replays that
-  table's recent history.
+- Movement is client-authoritative and sent to the room at most
+  20x/second, only while the player is actually moving (`move`);
+  collision against tables, the counter and the board is checked
+  locally on each client (`client/src/scene3d/movement.js`).
+- Walking near a table, the counter or the events board only shows a
+  button ("Join table" / "Open shop" / "View events", or the E key);
+  nothing opens or joins on its own. "Join table" sends `join-table`,
+  which the server only accepts from within the table's radius
+  (`server/src/tableRange.js`), joins that table's Socket.io room
+  (scoping `table-chat` and replaying its history) and its call.
+  "Leave table" sends `leave-table`.
 - Every shop-wide and table chat message is written to Postgres before
   it's broadcast, so the id/timestamp in the broadcast payload always
   matches what a later joiner will see in history.
@@ -560,7 +609,16 @@ npm run dev:client
       differently: the server owns the only copy (`server/src/scenes/`)
       and sends the layout to the client at join time, so there's
       nothing left to keep in sync
-- [ ] Sprite art instead of procedurally-drawn circles/squares
+- [x] Real art instead of procedurally-drawn circles/squares - done as a
+      3D shop with CC0 Kenney models, see "The 3D shop"
+- [ ] Character customization level 2: build your own from separate
+      parts (head / hair / outfit / color) with a character editor -
+      `users.avatar_config` is JSONB with a `v` field so this needs no
+      schema change
+- [ ] Character customization level 3: unlockable items (e.g. event
+      rewards) - needs art and a reward system
+- [ ] Put the actual opponent on the big screen at a table (link event
+      pairings to tables) instead of "first other camera that's on"
 - [ ] Deploy a live demo (client to a static host, server to a small
       Node host) and link it here - config and step-by-step guide are
       ready: `render.yaml` + `docs/deploy.md` (Cloudflare Pages + Render
@@ -570,7 +628,7 @@ npm run dev:client
       order-chat thread - done as template+parameters shop creation (no
       freeform design) and no real payment processing yet - see
       "Becoming a shop owner & the marketplace" above
-- [ ] Let an owner upload their own table/floor sprites instead of
+- [ ] Let an owner upload their own table/floor models instead of
       picking a preset theme - the `shops.assets` column and
       `resolveScene()`'s payload shape already support this, only the
       upload/moderation UI and the client actually reading `assets` are
@@ -588,7 +646,7 @@ module just exports a table layout. If a future shop type or event needs
 its own *behavior* (a countdown timer, moving decorations, different
 walk-in rules) rather than just a different floor, grow the registry
 into a "data + hooks" pattern instead of branching on scene type inside
-`index.js`/`ShopScene.js`:
+`index.js`/`ShopWorld.js`:
 
 1. Add an optional `hooks` export to a scene module that needs one (e.g.
    `server/src/scenes/halloween-event.js`), such as
@@ -605,11 +663,11 @@ into a "data + hooks" pattern instead of branching on scene type inside
 4. Mirror this on the client only if a scene needs client-only visuals
    (e.g. falling leaves, a banner): add an optional `decorate(scene)`
    export next to a scene's data, e.g. under
-   `client/src/scenes/decorations/`, and call it once from
-   `ShopScene.create()` when `payload.sceneType` has a matching module.
+   `client/src/scene3d/decorations/`, and call it once from
+   the `ShopWorld` constructor when `payload.sceneType` has a matching module.
 5. Keep `getScene(sceneType)` the single lookup point in both server and
    client — no `if (sceneType === "halloween-event")` branches scattered
-   through `index.js` or `ShopScene.js`.
+   through `index.js` or `ShopWorld.js`.
 
 This keeps every purely-layout shop (including `default.js`) as simple
 as it is today, and only the scenes that actually need custom behavior
