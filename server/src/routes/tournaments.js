@@ -10,6 +10,8 @@ import { requireAuth, requireRole } from "../middleware/auth.js";
 import { getShopById } from "../db/shops.js";
 import { userIdsInRoom } from "../rooms.js";
 import { startingRoster } from "../tournament/entry.js";
+import { assignTables } from "../tournament/tables.js";
+import { resolveScene } from "../scenes/index.js";
 import * as db from "../db/tournaments.js";
 import { createNotification, publicNotification } from "../db/notifications.js";
 import {
@@ -224,6 +226,20 @@ function publicEvent(event) {
   };
 }
 
+/**
+ * Gives a round's pairings their table numbers: the shop's real tables
+ * for the top pairs (by the two players' points), online tables after.
+ */
+async function withTables(event, pairings, pointsById = new Map()) {
+  const shop = await getShopById(event.shop_id);
+  const physical = shop ? resolveScene(shop).TABLES.length : 0;
+  const seeded = pairings.map((p) => ({
+    ...p,
+    seedPoints: (pointsById.get(p.player1Id) ?? 0) + (pointsById.get(p.player2Id) ?? 0),
+  }));
+  return assignTables(seeded, physical);
+}
+
 function publicPlayer(p) {
   return {
     id: p.id,
@@ -251,6 +267,8 @@ function publicMatch(row) {
     player2Claim: row.player2_claim,
     result: row.result,
     confirmedAt: row.confirmed_at,
+    tableNumber: row.table_number,
+    tableOnline: row.table_online,
   };
 }
 
@@ -596,7 +614,7 @@ export function createTournamentsRouter(io) {
         dropped: false,
       }));
       const { pairings, byePlayerId } = pairRound(pairingInput);
-      await db.insertRoundMatches(event.id, "swiss", 1, pairings);
+      await db.insertRoundMatches(event.id, "swiss", 1, await withTables(event, pairings));
       if (byePlayerId) await db.markPlayersHadBye([byePlayerId]);
 
       res.json({
@@ -715,7 +733,8 @@ async function advanceFromSwiss(event, res) {
       dropped: false,
     }));
     const { pairings, byePlayerId } = pairRound(pairingInput);
-    await db.insertRoundMatches(event.id, "swiss", nextRound, pairings);
+    const pointsById = new Map(standings.map((s) => [s.id, s.points]));
+    await db.insertRoundMatches(event.id, "swiss", nextRound, await withTables(event, pairings, pointsById));
     if (byePlayerId) await db.markPlayersHadBye([byePlayerId]);
     const updatedEvent = await db.advanceToSwissRound(event.id, nextRound);
     return res.json({ event: publicEvent(updatedEvent), nextRoundPairings: pairings });
@@ -738,7 +757,7 @@ async function advanceFromSwiss(event, res) {
   const cutResult = resolveCutRoster(sorted, event.configured_cut_size, totalRegistered);
   const qualifiedIds = cutResult.qualified.map((p) => p.id);
   const pairings = generateBracketRound1(qualifiedIds, cutResult.cutSize);
-  await db.insertRoundMatches(event.id, "bracket", 1, pairings);
+  await db.insertRoundMatches(event.id, "bracket", 1, await withTables(event, pairings));
   const updatedEvent = await db.startBracketPhase(event.id, cutResult.cutSize);
 
   // Everyone who didn't make the cut is already locked into their
@@ -777,7 +796,7 @@ async function advanceFromBracket(event, res) {
 
   if (event.current_round < rounds) {
     const nextPairings = advanceBracketRound(currentMatches);
-    await db.insertRoundMatches(event.id, "bracket", event.current_round + 1, nextPairings);
+    await db.insertRoundMatches(event.id, "bracket", event.current_round + 1, await withTables(event, nextPairings));
     const updatedEvent = await db.advanceToBracketRound(event.id, event.current_round + 1);
     return res.json({ event: publicEvent(updatedEvent), nextRoundPairings: nextPairings });
   }

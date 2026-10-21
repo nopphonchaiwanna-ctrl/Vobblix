@@ -158,4 +158,15 @@ describe("event day", { skip: SKIP_REASON }, () => {
     const { body } = await api.get(`/events/${event.id}`, owner.token);
     assert.equal(body.currentRoundMatches.length, 2);
   });
+
+  test("round 1 gets table numbers 1..n on the shop's tables", async () => {
+    const event = await createEvent({ maxPlayers: 8 });
+    await registerAll(event.id, players.slice(0, 8));
+    await openCheckInAndApproveAll(api, owner.token, event.id);
+    assert.equal((await api.post(`/events/${event.id}/start`, owner.token)).status, 200);
+    const { body } = await api.get(`/events/${event.id}`, owner.token);
+    const numbers = body.currentRoundMatches.map((m) => m.tableNumber).sort((a, b) => a - b);
+    assert.deepEqual(numbers, [1, 2, 3, 4]);
+    assert.ok(body.currentRoundMatches.every((m) => m.tableOnline === false));
+  });
 });

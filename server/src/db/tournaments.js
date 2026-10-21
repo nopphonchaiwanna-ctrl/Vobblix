@@ -226,13 +226,13 @@ export async function setPlayerFinalPlacement(playerId, { finalRank, finalLabel 
  */
 export async function insertRoundMatches(eventId, phase, roundNumber, pairings) {
   const inserted = [];
-  for (const { player1Id, player2Id } of pairings) {
+  for (const { player1Id, player2Id, tableNumber = null, tableOnline = false } of pairings) {
     const isBye = !player2Id;
     const { rows } = await pool.query(
-      `INSERT INTO tournament_matches (event_id, phase, round_number, player1_id, player2_id, result, confirmed_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO tournament_matches (event_id, phase, round_number, player1_id, player2_id, result, confirmed_at, table_number, table_online)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        RETURNING *`,
-      [eventId, phase, roundNumber, player1Id, player2Id ?? null, isBye ? "bye" : null, isBye ? new Date() : null]
+      [eventId, phase, roundNumber, player1Id, player2Id ?? null, isBye ? "bye" : null, isBye ? new Date() : null, tableNumber, tableOnline]
     );
     inserted.push(rows[0]);
   }
