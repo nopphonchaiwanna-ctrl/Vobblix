@@ -110,4 +110,63 @@ describe("judging", { skip: SKIP_REASON }, () => {
     await api.post(`/events/${event.id}/cancel`, owner.token);
     assert.equal((await api.post(`/events/${event.id}/matches/${match.id}/call-judge`, p1.token)).status, 409);
   });
+
+  test("a judge's warning is recorded and only the player (and staff) see it", async () => {
+    const { event, match, p1, p2, body } = await runningEvent();
+    const playerId = match.player1Id;
+    const r = await api.post(`/events/${event.id}/penalties`, judgeA.token, { playerId, matchId: match.id, level: "warning", reason: "Slow play" });
+    assert.equal(r.status, 201, JSON.stringify(r.body));
+    assert.equal(r.body.penalty.status, "recorded");
+    assert.equal((await api.get(`/events/${event.id}`, p1.token)).body.penalties.length, 1);
+    assert.equal((await api.get(`/events/${event.id}`, p2.token)).body.penalties.length, 0);
+    assert.equal((await api.get(`/events/${event.id}`, owner.token)).body.penalties.length, 1);
+    assert.equal(
+      (await api.post(`/events/${event.id}/penalties`, p2.token, { playerId, level: "warning", reason: "x" })).status,
+      403
+    );
+    assert.equal(
+      (await api.post(`/events/${event.id}/penalties`, judgeA.token, { playerId, level: "warning", reason: "" })).status,
+      400
+    );
+    void body;
+  });
+
+  test("a judge's match loss waits; the organizer confirms and the result flips", async () => {
+    const { event, match } = await runningEvent();
+    const r = await api.post(`/events/${event.id}/penalties`, judgeA.token, {
+      playerId: match.player1Id, matchId: match.id, level: "match_loss", reason: "Marked cards",
+    });
+    assert.equal(r.body.penalty.status, "pending");
+    let m = (await api.get(`/events/${event.id}`, owner.token)).body.currentRoundMatches.find((x) => x.id === match.id);
+    assert.equal(m.result, null);
+    assert.equal((await api.post(`/events/${event.id}/penalties/${r.body.penalty.id}/confirm`, judgeA.token)).status, 403);
+    assert.equal((await api.post(`/events/${event.id}/penalties/${r.body.penalty.id}/confirm`, owner.token)).status, 200);
+    m = (await api.get(`/events/${event.id}`, owner.token)).body.currentRoundMatches.find((x) => x.id === match.id);
+    assert.equal(m.result, "player2_win");
+  });
+
+  test("match loss on an earlier round is refused; a confirmed DQ keeps them out of the next round", async () => {
+    const { event, match, body } = await runningEvent();
+    for (const mm of body.currentRoundMatches.filter((x) => !x.result)) {
+      await api.post(`/events/${event.id}/matches/${mm.id}/override`, owner.token, { result: "player1_win" });
+    }
+    assert.equal((await api.post(`/events/${event.id}/advance`, owner.token)).status, 200);
+    const old = await api.post(`/events/${event.id}/penalties`, owner.token, {
+      playerId: match.player1Id, matchId: match.id, level: "match_loss", reason: "Late find",
+    });
+    assert.equal(old.status, 400);
+    assert.equal(old.body.error, "Match loss only applies to the current round.");
+
+    const dq = await api.post(`/events/${event.id}/penalties`, owner.token, {
+      playerId: match.player1Id, level: "disqualification", reason: "Cheating",
+    });
+    assert.equal(dq.body.penalty.status, "confirmed");
+    const after = (await api.get(`/events/${event.id}`, owner.token)).body;
+    assert.equal(after.players.find((p) => p.id === match.player1Id).dropped, true);
+    const cur = after.currentRoundMatches.find((x) => x.player1Id === match.player1Id || x.player2Id === match.player1Id);
+    if (cur && cur.player2Id) {
+      const lost = cur.player1Id === match.player1Id ? "player2_win" : "player1_win";
+      assert.equal(cur.result, lost, "their unfinished match is a loss");
+    }
+  });
 });

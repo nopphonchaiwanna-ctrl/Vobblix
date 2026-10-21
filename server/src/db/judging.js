@@ -80,3 +80,45 @@ export async function listActiveJudgeCalls(eventId) {
   );
   return rows;
 }
+
+// ---------- Penalties ----------
+
+export async function createPenalty({ eventId, playerId, matchId, level, reason, issuedBy, status }) {
+  const { rows } = await pool.query(
+    `INSERT INTO event_penalties (event_id, player_id, match_id, level, reason, issued_by, status, decided_by, decided_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, CASE WHEN $7 = 'confirmed' THEN $6::uuid END, CASE WHEN $7 = 'confirmed' THEN now() END)
+     RETURNING *`,
+    [eventId, playerId, matchId ?? null, level, reason, issuedBy, status]
+  );
+  return rows[0];
+}
+
+export async function getPenalty(id) {
+  const { rows } = await pool.query(`SELECT * FROM event_penalties WHERE id = $1`, [id]);
+  return rows[0] || null;
+}
+
+/** pending -> confirmed/rejected, once. null if already decided. */
+export async function decidePenalty(id, status, decidedBy) {
+  const { rows } = await pool.query(
+    `UPDATE event_penalties SET status = $2, decided_by = $3, decided_at = now()
+     WHERE id = $1 AND status = 'pending' RETURNING *`,
+    [id, status, decidedBy]
+  );
+  return rows[0] || null;
+}
+
+/** All of an event's penalties, or only one player's (playerId). */
+export async function listPenalties(eventId, playerId = null) {
+  const { rows } = await pool.query(
+    `SELECT p.*, u.display_name AS player_name, iu.display_name AS issued_by_name
+     FROM event_penalties p
+     JOIN tournament_players tp ON tp.id = p.player_id
+     JOIN users u ON u.id = tp.user_id
+     LEFT JOIN users iu ON iu.id = p.issued_by
+     WHERE p.event_id = $1 AND ($2::uuid IS NULL OR p.player_id = $2)
+     ORDER BY p.created_at`,
+    [eventId, playerId]
+  );
+  return rows;
+}

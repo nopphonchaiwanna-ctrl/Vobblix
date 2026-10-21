@@ -16,7 +16,7 @@ import { refreshEventTables } from "../eventTables.js";
 import { createEventNotifier } from "../eventNotify.js";
 import { eventRole } from "../eventAccess.js";
 import * as judging from "../db/judging.js";
-import { publicJudgeCall } from "./judging.js";
+import { publicJudgeCall, publicPenalty } from "./judging.js";
 import * as db from "../db/tournaments.js";
 import { createNotification, publicNotification } from "../db/notifications.js";
 import {
@@ -245,6 +245,11 @@ async function withTables(event, pairings, pointsById = new Map()) {
   return assignTables(seeded, physical);
 }
 
+/** A player's own penalties - none at all if they have no (active) entry. */
+async function ownPenalties(eventId, playerRow) {
+  return playerRow ? judging.listPenalties(eventId, playerRow.id) : [];
+}
+
 function publicPlayer(p) {
   return {
     id: p.id,
@@ -347,6 +352,12 @@ export function createTournamentsRouter(io) {
         myRole,
         judges,
         ...(staff ? { openJudgeCalls: (await judging.listActiveJudgeCalls(event.id)).map(publicJudgeCall) } : {}),
+        // Staff see every penalty; a player only their own.
+        penalties: (
+          staff
+            ? await judging.listPenalties(event.id)
+            : await ownPenalties(event.id, players.find((p) => p.user_id === req.auth.userId && !p.dropped))
+        ).map(publicPenalty),
         players: players.map(publicPlayer),
         standings: sorted,
         currentRoundMatches: currentRoundMatches.map(publicMatch),

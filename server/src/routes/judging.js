@@ -10,6 +10,7 @@ import { getShopById } from "../db/shops.js";
 import { searchUsersByName } from "../db/users.js";
 import { eventRole, requireEventStaff } from "../eventAccess.js";
 import { createEventNotifier } from "../eventNotify.js";
+import { penaltyOutcome } from "../tournament/penalties.js";
 
 const RECALL_COOLDOWN_MS = 60 * 1000;
 const RUNNING = ["swiss", "bracket"];
@@ -32,6 +33,42 @@ export function publicJudgeCall(c) {
     claimedByName: c.claimed_by_name ?? null,
     createdAt: c.created_at,
   };
+}
+
+export function publicPenalty(p) {
+  return {
+    id: p.id,
+    playerId: p.player_id,
+    playerName: p.player_name ?? null,
+    matchId: p.match_id,
+    level: p.level,
+    reason: p.reason,
+    status: p.status,
+    issuedByName: p.issued_by_name ?? null,
+    createdAt: p.created_at,
+  };
+}
+
+const LEVEL_LABEL = { warning: "a warning", match_loss: "a match loss", disqualification: "a disqualification" };
+
+function isCurrentRoundMatch(event, match) {
+  return RUNNING.includes(event.status) && match.phase === event.current_phase && match.round_number === event.current_round;
+}
+
+/** The effect of a confirmed match loss / DQ - results only ever change for the current round. */
+async function applyPenalty(event, penalty, decidedBy) {
+  const lossFor = async (match, playerId) => {
+    if (!match || !match.player2_id || !isCurrentRoundMatch(event, match)) return;
+    await db.overrideMatchResult(match.id, decidedBy, match.player1_id === playerId ? "player2_win" : "player1_win");
+  };
+  if (penalty.level === "match_loss") {
+    await lossFor(await db.getMatchById(penalty.match_id), penalty.player_id);
+  } else if (penalty.level === "disqualification") {
+    await db.dropAndPromote(penalty.player_id);
+    const current = await db.getMatchesForRound(event.id, event.current_phase, event.current_round);
+    const theirs = current.find((m) => !m.result && (m.player1_id === penalty.player_id || m.player2_id === penalty.player_id));
+    await lossFor(theirs, penalty.player_id);
+  }
 }
 
 export function createJudgingRouter(io) {
@@ -167,6 +204,57 @@ export function createJudgingRouter(io) {
       next(err);
     }
   });
+
+  // ---------- Penalties ----------
+
+  router.post("/:id/penalties", async (req, res, next) => {
+    try {
+      const event = await loadEvent(req, res);
+      if (!event) return;
+      const role = await requireEventStaff(req, res, event);
+      if (!role) return;
+      const { playerId, matchId = null, level } = req.body || {};
+      const reason = String(req.body?.reason || "").trim();
+      if (!reason || reason.length > 300) return res.status(400).json({ error: "Give a reason (up to 300 characters)." });
+      const player = await db.getPlayerById(playerId);
+      if (!player || player.event_id !== event.id) return res.status(404).json({ error: "Player not found in this event." });
+      const match = matchId ? await db.getMatchById(matchId) : null;
+      if (matchId && (!match || match.event_id !== event.id)) return res.status(404).json({ error: "Match not found." });
+      const outcome = penaltyOutcome({ level, issuerRole: role, matchIsCurrentRound: !!match && isCurrentRoundMatch(event, match) });
+      if (!outcome.allowed) return res.status(400).json({ error: outcome.reason });
+
+      const penalty = await judging.createPenalty({
+        eventId: event.id, playerId: player.id, matchId, level, reason, issuedBy: req.auth.userId, status: outcome.status,
+      });
+      if (penalty.status === "confirmed") await applyPenalty(event, penalty, req.auth.userId);
+      await notifyUser(player.user_id, {
+        kind: "event_penalty",
+        message: `${event.name}: you received ${LEVEL_LABEL[level]}${penalty.status === "pending" ? " (pending the organizer)" : ""} - ${reason}`,
+        target: `/events/${event.id}`,
+      });
+      res.status(201).json({ penalty: publicPenalty(penalty) });
+    } catch (err) {
+      if (err.code === "22P02") return res.status(404).json({ error: "Not found." });
+      next(err);
+    }
+  });
+
+  for (const [action, status] of [["confirm", "confirmed"], ["reject", "rejected"]]) {
+    router.post(`/:id/penalties/:penaltyId/${action}`, async (req, res, next) => {
+      try {
+        const event = await loadEvent(req, res);
+        if (!event || !(await requireOrganizer(req, res, event))) return;
+        const existing = await judging.getPenalty(req.params.penaltyId);
+        if (!existing || existing.event_id !== event.id) return res.status(404).json({ error: "Penalty not found." });
+        const decided = await judging.decidePenalty(existing.id, status, req.auth.userId);
+        if (!decided) return res.status(409).json({ error: "This penalty was already decided." });
+        if (status === "confirmed") await applyPenalty(event, decided, req.auth.userId);
+        res.json({ penalty: publicPenalty(decided) });
+      } catch (err) {
+        next(err);
+      }
+    });
+  }
 
   return router;
 }
