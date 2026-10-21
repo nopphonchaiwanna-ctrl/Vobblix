@@ -9,12 +9,15 @@
 // server-side; this module just surfaces the resulting ok/reason back to
 // the caller so the UI can show why a join/enable-video was refused.
 //
-// Glare avoidance: only the *joiner* ever creates an SDP offer, toward
-// each peer already in the call (see join()). An existing member only
-// ever answers. This means two sides never simultaneously try to offer
-// each other, so there's no need for perfect-negotiation/rollback logic.
+// Glare: the joiner offers to each peer already in the call (see join()),
+// but anyone turning their camera on also re-offers to every peer (see
+// enableVideo()) - so two offers can cross, e.g. both players switching
+// their cameras on together. That's resolved with "perfect negotiation"
+// (webrtc/negotiation.js): the polite side of each pair gives way and
+// re-offers, the impolite side ignores the colliding offer.
 
 import { getSocket } from "../net/socket.js";
+import { isPolite, offerCollision, shouldIgnoreAnswer } from "./negotiation.js";
 
 // Used until (or if) the server's list arrives - see join().
 const FALLBACK_ICE_SERVERS = [{ urls: "stun:stun.l.google.com:19302" }];
@@ -46,6 +49,7 @@ export function createCallManager(handlers) {
   const socket = getSocket();
   let iceServers = FALLBACK_ICE_SERVERS;
   const peers = new Map(); // peerId -> RTCPeerConnection
+  const makingOffer = new Set(); // peerIds we're mid-createOffer/setLocalDescription with
   const speakingDetectors = new Map(); // "local" | peerId -> detector state
 
   let localStream = null;
@@ -203,34 +207,66 @@ export function createCallManager(handlers) {
     if (!pc) return;
     pc.close();
     peers.delete(peerId);
+    makingOffer.delete(peerId);
+    ignoringOfferFrom.delete(peerId);
     detachSpeakingDetector(peerId);
     handlers.onPeerStream?.(peerId, null);
   }
 
-  async function makeOfferTo(peerId) {
-    const pc = createPeerConnection(peerId);
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    socket.emit("call-signal", { to: peerId, data: { type: "offer", sdp: offer } });
+  // Sends a fresh offer on `pc` (new connection or added track).
+  async function sendOffer(peerId, pc) {
+    makingOffer.add(peerId);
+    try {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      socket.emit("call-signal", { to: peerId, data: { type: "offer", sdp: pc.localDescription } });
+    } finally {
+      makingOffer.delete(peerId);
+    }
   }
+
+  async function makeOfferTo(peerId) {
+    await sendOffer(peerId, createPeerConnection(peerId));
+  }
+
+  // Candidates for an offer we chose to ignore (impolite side of a
+  // collision) will fail to apply - expected, so don't warn about them.
+  const ignoringOfferFrom = new Set();
 
   async function handleSignal({ from, data }) {
     if (data.type === "offer") {
       const pc = peers.get(from) || createPeerConnection(from);
+      const { collision, ignore } = offerCollision({
+        polite: isPolite(socket.id, from),
+        makingOffer: makingOffer.has(from),
+        signalingState: pc.signalingState,
+      });
+      if (ignore) {
+        ignoringOfferFrom.add(from);
+        return;
+      }
+      ignoringOfferFrom.delete(from);
+      // Polite side of a collision: setRemoteDescription rolls our own
+      // pending offer back implicitly, then we answer theirs...
       await pc.setRemoteDescription(data.sdp);
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
-      socket.emit("call-signal", { to: from, data: { type: "answer", sdp: answer } });
+      socket.emit("call-signal", { to: from, data: { type: "answer", sdp: pc.localDescription } });
+      // ...and re-send ours, so whatever we were adding (our camera)
+      // still reaches them.
+      if (collision) await sendOffer(from, pc);
     } else if (data.type === "answer") {
       const pc = peers.get(from);
-      if (pc) await pc.setRemoteDescription(data.sdp);
+      // A late answer to an offer we already rolled back - nothing to apply.
+      if (!pc || shouldIgnoreAnswer(pc.signalingState)) return;
+      await pc.setRemoteDescription(data.sdp);
     } else if (data.type === "candidate") {
       const pc = peers.get(from);
       if (!pc) return;
       try {
         await pc.addIceCandidate(data.candidate);
       } catch (err) {
-        console.warn("[call] failed to add ICE candidate", err);
+        if (!ignoringOfferFrom.has(from)) console.warn("[call] failed to add ICE candidate", err);
       }
     }
   }
@@ -426,9 +462,7 @@ export function createCallManager(handlers) {
     // the new video track too.
     for (const [peerId, pc] of peers) {
       addLocalTrack(pc, videoTrack);
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      socket.emit("call-signal", { to: peerId, data: { type: "offer", sdp: offer } });
+      await sendOffer(peerId, pc);
     }
 
     return { ok: true };
