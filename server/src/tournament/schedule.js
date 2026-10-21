@@ -21,3 +21,16 @@ export function isPastStart(startsAt, now) {
 export function registrationOpen(event, now) {
   return OPEN_STATUSES.includes(event.status) && !isPastStart(event.starts_at, now);
 }
+
+// The lobby's date filter counts days in Thai time (UTC+7, no DST).
+const BANGKOK_OFFSET_MS = 7 * 3_600_000;
+const DAY_MS = 86_400_000;
+const WINDOW_DAYS = { today: 1, week: 7 };
+
+/** { from, to } for "today" / "week" (from = 00:00 today in Bangkok), or null for no date filter. */
+export function upcomingWindow(when, now) {
+  const days = WINDOW_DAYS[when];
+  if (!days) return null;
+  const from = Math.floor((now.getTime() + BANGKOK_OFFSET_MS) / DAY_MS) * DAY_MS - BANGKOK_OFFSET_MS;
+  return { from: new Date(from), to: new Date(from + days * DAY_MS) };
+}

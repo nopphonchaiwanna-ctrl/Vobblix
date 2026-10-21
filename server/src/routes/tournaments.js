@@ -11,7 +11,7 @@ import { getShopById } from "../db/shops.js";
 import { userIdsInRoom } from "../rooms.js";
 import { startingRoster } from "../tournament/entry.js";
 import { assignTables } from "../tournament/tables.js";
-import { parseStartsAt, registrationOpen } from "../tournament/schedule.js";
+import { parseStartsAt, registrationOpen, upcomingWindow } from "../tournament/schedule.js";
 import { refreshEventTables } from "../eventTables.js";
 import { createEventNotifier } from "../eventNotify.js";
 import { eventRole } from "../eventAccess.js";
@@ -236,6 +236,17 @@ function publicEvent(event) {
   };
 }
 
+/** One row of the lobby's list: the event plus its shop, head count and the viewer's own entry. */
+function publicUpcomingEvent(row) {
+  const mine = row.my_entry_status && !row.my_dropped && !row.my_no_show;
+  return {
+    ...publicEvent(row),
+    shop: { name: row.shop_name, code: row.shop_code, logoUrl: row.shop_logo_url },
+    enteredCount: row.entered_count,
+    myEntry: mine ? { entryStatus: row.my_entry_status, waitlistPosition: row.my_waitlist_position } : null,
+  };
+}
+
 /**
  * Gives a round's pairings their online table numbers, the top pairs (by
  * the two players' points) first.
@@ -321,6 +332,27 @@ export function createTournamentsRouter(io) {
     try {
       const events = await db.listEventsForShop(req.params.shopId);
       res.json({ events: events.map(publicEvent) });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // The lobby's list: every published shop's upcoming and live events.
+  // Registered before /:id so "upcoming" isn't read as an event id.
+  tournamentsRouter.get("/upcoming", async (req, res, next) => {
+    try {
+      const q = typeof req.query.q === "string" ? req.query.q.trim().slice(0, 80) : "";
+      const game = typeof req.query.game === "string" && req.query.game ? req.query.game : null;
+      if (game && !VALID_GAMES.includes(game)) return res.status(400).json({ error: "Choose a supported game." });
+      const now = new Date();
+      const rows = await db.listUpcomingEvents({
+        q: q || null,
+        game,
+        window: upcomingWindow(req.query.when, now),
+        userId: req.auth.userId,
+        now,
+      });
+      res.json({ events: rows.map(publicUpcomingEvent) });
     } catch (err) {
       next(err);
     }

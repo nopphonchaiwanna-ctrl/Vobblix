@@ -607,3 +607,41 @@ export async function startFromCheckIn(eventId, plan) {
     return { event: rows[0], ...result };
   });
 }
+
+// ---------- Lobby: upcoming events across shops ----------
+
+const LIKE_SPECIALS = /[\\%_]/g;
+
+/**
+ * Open, check-in and live events at published shops (lobby-events §6.1).
+ * An event never started more than 24h after its start time is treated
+ * as abandoned. `window` = { from, to } or null; live events ignore it.
+ */
+export async function listUpcomingEvents({ q = null, game = null, window = null, userId, now = new Date() }) {
+  const pattern = q ? `%${q.replace(LIKE_SPECIALS, (c) => `\\${c}`)}%` : null;
+  const { rows } = await pool.query(
+    `SELECT e.*,
+            s.name AS shop_name, s.code AS shop_code, s.logo_url AS shop_logo_url,
+            COALESCE(c.entered_count, 0)::int AS entered_count,
+            me.entry_status AS my_entry_status, me.waitlist_position AS my_waitlist_position,
+            me.dropped AS my_dropped, me.no_show AS my_no_show
+     FROM tournament_events e
+     JOIN shops s ON s.id = e.shop_id AND s.status = 'published'
+     LEFT JOIN (
+       SELECT event_id, COUNT(*) AS entered_count
+       FROM tournament_players
+       WHERE entry_status = 'entered' AND NOT dropped
+       GROUP BY event_id
+     ) c ON c.event_id = e.id
+     LEFT JOIN tournament_players me ON me.event_id = e.id AND me.user_id = $1
+     WHERE e.status IN ('registration', 'check_in', 'swiss', 'bracket')
+       AND (e.status IN ('swiss', 'bracket') OR e.starts_at IS NULL OR e.starts_at > $2::timestamptz - interval '24 hours')
+       AND ($3::text IS NULL OR s.name ILIKE $3 ESCAPE '\\' OR e.name ILIKE $3 ESCAPE '\\')
+       AND ($4::text IS NULL OR e.game = $4)
+       AND ($5::timestamptz IS NULL OR e.status IN ('swiss', 'bracket') OR (e.starts_at >= $5 AND e.starts_at < $6))
+     ORDER BY (e.status IN ('swiss', 'bracket')) DESC, e.starts_at ASC NULLS LAST, e.created_at DESC
+     LIMIT 50`,
+    [userId, now, pattern, game, window?.from ?? null, window?.to ?? null]
+  );
+  return rows;
+}
