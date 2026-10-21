@@ -3,6 +3,7 @@
 // the style of db/shops.js - plain snake_case rows out, no ORM.
 
 import { pool } from "./pool.js";
+import { entryStatusOnRegister, drawLottery, nextFromWaitlist } from "../tournament/entry.js";
 
 // ---------- Events ----------
 
@@ -297,4 +298,143 @@ export async function overrideMatchResult(matchId, adminUserId, result) {
     [matchId, result, adminUserId]
   );
   return rows[0] || null;
+}
+
+// ---------- Event day: entry, waitlist, lottery (migration 020) ----------
+// Each runs in one transaction with the event row locked, so two
+// requests at once (two drops, a drop + a draw) can't double-promote or
+// hand out the same waitlist position twice.
+
+
+async function inEventTx(eventId, fn) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const { rows } = await client.query(`SELECT * FROM tournament_events WHERE id = $1 FOR UPDATE`, [eventId]);
+    const result = await fn(client, rows[0] || null);
+    await client.query("COMMIT");
+    return result;
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+async function nextWaitlistPosition(client, eventId) {
+  const { rows } = await client.query(
+    `SELECT COALESCE(MAX(waitlist_position), 0) + 1 AS next FROM tournament_players WHERE event_id = $1 AND dropped = false`,
+    [eventId]
+  );
+  return rows[0].next;
+}
+
+/**
+ * Registers (or re-registers a dropped) player with the entry status the
+ * event's mode + state give them. During check-in only the waitlist is
+ * open. Throws ALREADY_REGISTERED like registerPlayer.
+ */
+export async function registerWithEntry(eventId, userId) {
+  return inEventTx(eventId, async (client, event) => {
+    const { rows: counts } = await client.query(
+      `SELECT COUNT(*)::int AS entered FROM tournament_players WHERE event_id = $1 AND dropped = false AND entry_status = 'entered'`,
+      [eventId]
+    );
+    const entryStatus =
+      event.status === "check_in"
+        ? "waitlisted"
+        : entryStatusOnRegister({
+            mode: event.registration_mode,
+            maxPlayers: event.max_players,
+            enteredCount: counts[0].entered,
+            lotteryDrawn: !!event.lottery_drawn_at,
+          });
+    const waitlistPosition = entryStatus === "waitlisted" ? await nextWaitlistPosition(client, eventId) : null;
+    const { rows } = await client.query(
+      `INSERT INTO tournament_players (event_id, user_id, entry_status, waitlist_position)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (event_id, user_id) DO UPDATE
+         SET dropped = false, registered_at = now(), entry_status = $3, waitlist_position = $4,
+             check_in_requested_at = NULL, checked_in_at = NULL, checked_in_by = NULL, no_show = false
+         WHERE tournament_players.dropped = true
+       RETURNING *`,
+      [eventId, userId, entryStatus, waitlistPosition]
+    );
+    if (rows[0]) return rows[0];
+    const err = new Error("You're already registered for this event.");
+    err.code = "ALREADY_REGISTERED";
+    throw err;
+  });
+}
+
+/**
+ * Drops a player; before the first round, an entered player's spot goes
+ * to the next waitlister. Returns { dropped, promoted } (promoted = the
+ * promoted player row or null).
+ */
+export async function dropAndPromote(playerId) {
+  const player = await getPlayerById(playerId);
+  if (!player) return { dropped: null, promoted: null };
+  return inEventTx(player.event_id, async (client, event) => {
+    const { rows } = await client.query(
+      `UPDATE tournament_players SET dropped = true WHERE id = $1 AND dropped = false RETURNING *`,
+      [playerId]
+    );
+    const dropped = rows[0] || (await client.query(`SELECT * FROM tournament_players WHERE id = $1`, [playerId])).rows[0];
+    let promoted = null;
+    const preStart = event.status === "registration" || event.status === "check_in";
+    if (rows[0] && preStart && rows[0].entry_status === "entered") {
+      const { rows: waiting } = await client.query(
+        `SELECT id, waitlist_position, dropped FROM tournament_players WHERE event_id = $1 AND entry_status = 'waitlisted'`,
+        [event.id]
+      );
+      const nextId = nextFromWaitlist(waiting.map((w) => ({ id: w.id, waitlistPosition: w.waitlist_position, dropped: w.dropped })));
+      if (nextId) {
+        const { rows: up } = await client.query(
+          `UPDATE tournament_players SET entry_status = 'entered', waitlist_position = NULL WHERE id = $1 RETURNING *`,
+          [nextId]
+        );
+        promoted = up[0];
+      }
+    }
+    return { dropped, promoted };
+  });
+}
+
+/**
+ * Runs the lottery once. Returns null if it already ran; otherwise
+ * { entered: userIds, waitlisted: userIds } in drawn order.
+ */
+export async function runLottery(eventId, rng = Math.random) {
+  return inEventTx(eventId, async (client, event) => {
+    if (event.lottery_drawn_at) return null;
+    const { rows: applicants } = await client.query(
+      `SELECT id, user_id FROM tournament_players WHERE event_id = $1 AND dropped = false AND entry_status = 'pending_draw' ORDER BY registered_at`,
+      [eventId]
+    );
+    const { entered, waitlisted } = drawLottery(applicants.map((a) => a.id), event.max_players, rng);
+    await client.query(
+      `UPDATE tournament_players SET entry_status = 'entered', waitlist_position = NULL WHERE id = ANY($1::uuid[])`,
+      [entered]
+    );
+    for (let i = 0; i < waitlisted.length; i++) {
+      await client.query(`UPDATE tournament_players SET entry_status = 'waitlisted', waitlist_position = $2 WHERE id = $1`, [
+        waitlisted[i],
+        i + 1,
+      ]);
+    }
+    await client.query(`UPDATE tournament_events SET lottery_drawn_at = now() WHERE id = $1`, [eventId]);
+    const userOf = new Map(applicants.map((a) => [a.id, a.user_id]));
+    return { entered: entered.map((id) => userOf.get(id)), waitlisted: waitlisted.map((id) => userOf.get(id)) };
+  });
+}
+
+/** Entered (spot-holding) non-dropped players - what max_players caps. */
+export async function countEnteredPlayers(eventId) {
+  const { rows } = await pool.query(
+    `SELECT COUNT(*)::int AS count FROM tournament_players WHERE event_id = $1 AND dropped = false AND entry_status = 'entered'`,
+    [eventId]
+  );
+  return rows[0].count;
 }

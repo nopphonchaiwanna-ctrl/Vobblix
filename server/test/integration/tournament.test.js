@@ -306,10 +306,13 @@ describe("tournament flow", { skip: SKIP_REASON }, () => {
   test("registration rules: cap, double registration, drop and rejoin", async () => {
     const event = await createEvent({ name: "Cap", maxPlayers: 4 });
     for (const p of players.slice(0, 4)) assert.equal((await api.post(`/events/${event.id}/register`, p.token)).status, 201);
-    assert.equal((await api.post(`/events/${event.id}/register`, players[4].token)).status, 409, "full");
+    const full = await api.post(`/events/${event.id}/register`, players[4].token);
+    assert.equal(full.status, 201, "full - goes on the waitlist");
+    assert.equal(full.body.player.entryStatus, "waitlisted");
     assert.equal((await api.post(`/events/${event.id}/register`, players[0].token)).status, 409, "already in");
     assert.equal((await api.post(`/events/${event.id}/drop`, players[0].token)).status, 200);
-    assert.equal((await api.post(`/events/${event.id}/register`, players[4].token)).status, 201, "freed slot");
-    assert.equal((await api.post(`/events/${event.id}/register`, players[0].token)).status, 409, "full again");
+    const rejoin = await api.post(`/events/${event.id}/register`, players[0].token);
+    assert.equal(rejoin.status, 201, "rejoining after the waitlister took the freed spot");
+    assert.equal(rejoin.body.player.entryStatus, "waitlisted", "full again - back of the queue");
   });
 });

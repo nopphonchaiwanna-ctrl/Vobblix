@@ -213,6 +213,22 @@ function publicEvent(event) {
   };
 }
 
+function publicPlayer(p) {
+  return {
+    id: p.id,
+    userId: p.user_id,
+    displayName: p.display_name,
+    dropped: p.dropped,
+    finalRank: p.final_rank,
+    finalLabel: p.final_label,
+    entryStatus: p.entry_status,
+    waitlistPosition: p.waitlist_position,
+    checkInRequestedAt: p.check_in_requested_at,
+    checkedInAt: p.checked_in_at,
+    noShow: p.no_show,
+  };
+}
+
 function publicMatch(row) {
   return {
     id: row.id,
@@ -236,6 +252,17 @@ export function createTournamentsRouter(io) {
   // ---------- Create / list (owner, admin) ----------
 
   tournamentsRouter.use(requireAuth);
+
+  // In-app notification + live push to the user's sockets. Best effort:
+  // a failed notification never fails the action that caused it.
+  async function notifyUser(userId, { kind, message, target }) {
+    try {
+      const n = await createNotification({ userId, kind, message, target });
+      io.to(`user:${userId}`).emit("notification:new", publicNotification(n));
+    } catch (err) {
+      console.error(`[events] failed to notify ${kind}`, err);
+    }
+  }
 
   tournamentsRouter.post("/", requireRole("shop_owner", "admin"), async (req, res, next) => {
     try {
@@ -288,14 +315,7 @@ export function createTournamentsRouter(io) {
 
       res.json({
         event: publicEvent(event),
-        players: players.map((p) => ({
-          id: p.id,
-          userId: p.user_id,
-          displayName: p.display_name,
-          dropped: p.dropped,
-          finalRank: p.final_rank,
-          finalLabel: p.final_label,
-        })),
+        players: players.map(publicPlayer),
         standings: sorted,
         currentRoundMatches: currentRoundMatches.map(publicMatch),
         currentRoundStartedAt,
@@ -319,7 +339,7 @@ export function createTournamentsRouter(io) {
       if (event.status === "registration") {
         const parsed = parseEventSettings(req.body);
         if (parsed.error) return res.status(400).json({ error: parsed.error });
-        const activeCount = await db.countActivePlayers(event.id);
+        const activeCount = await db.countEnteredPlayers(event.id);
         if (parsed.fields.maxPlayers < activeCount) {
           return res.status(409).json({ error: `${activeCount} players are already registered - the limit can't go below that.` });
         }
@@ -384,25 +404,43 @@ export function createTournamentsRouter(io) {
     try {
       const event = await db.getEventById(req.params.id);
       if (!event) return res.status(404).json({ error: "Event not found." });
-      if (event.status !== "registration") {
+      // During check-in the field is set - newcomers can only join the waitlist.
+      if (event.status !== "registration" && event.status !== "check_in") {
         return res.status(409).json({ error: "Registration is closed for this event." });
       }
-      if (event.max_players) {
-        const activeCount = await db.countActivePlayers(event.id);
-        const alreadyIn = await db.getPlayerByEventAndUser(event.id, req.auth.userId);
-        // A previously-dropped player re-registering takes a new active
-        // slot, so they're still subject to the cap; someone already
-        // active isn't - they'll just hit ALREADY_REGISTERED below.
-        if (activeCount >= event.max_players && !(alreadyIn && !alreadyIn.dropped)) {
-          return res.status(409).json({ error: "This event is full." });
-        }
-      }
-      const player = await db.registerPlayer(event.id, req.auth.userId);
-      res.status(201).json({ player });
+      const player = await db.registerWithEntry(event.id, req.auth.userId);
+      res.status(201).json({ player: publicPlayer(player) });
     } catch (err) {
       if (err.code === "ALREADY_REGISTERED" || err.code === "23505") {
         return res.status(409).json({ error: "You're already registered for this event." });
       }
+      next(err);
+    }
+  });
+
+  tournamentsRouter.post("/:id/draw", async (req, res, next) => {
+    try {
+      const event = await requireEventOwnerOrAdmin(req, res, req.params.id);
+      if (!event) return;
+      if (event.registration_mode !== "lottery") return res.status(400).json({ error: "This event isn't a lottery." });
+      if (event.status !== "registration") return res.status(409).json({ error: "Registration is closed for this event." });
+      const result = await db.runLottery(event.id);
+      if (!result) return res.status(409).json({ error: "The draw has already been made." });
+      const target = `/events/${event.id}`;
+      await Promise.all([
+        ...result.entered.map((userId) =>
+          notifyUser(userId, { kind: "event_lottery_won", message: `You're in "${event.name}"!`, target })
+        ),
+        ...result.waitlisted.map((userId, i) =>
+          notifyUser(userId, {
+            kind: "event_lottery_waitlisted",
+            message: `"${event.name}" is full - you're #${i + 1} on the waitlist.`,
+            target,
+          })
+        ),
+      ]);
+      res.json(result);
+    } catch (err) {
       next(err);
     }
   });
@@ -426,7 +464,14 @@ export function createTournamentsRouter(io) {
       if (!player || player.event_id !== event.id) {
         return res.status(404).json({ error: "Player not found in this event." });
       }
-      const dropped = await db.dropPlayer(player.id);
+      const { dropped, promoted } = await db.dropAndPromote(player.id);
+      if (promoted) {
+        await notifyUser(promoted.user_id, {
+          kind: "event_promoted",
+          message: `You're in "${event.name}" - a spot opened up.`,
+          target: `/events/${event.id}`,
+        });
+      }
       res.json({ player: dropped });
     } catch (err) {
       next(err);
