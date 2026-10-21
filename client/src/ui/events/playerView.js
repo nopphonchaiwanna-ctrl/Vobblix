@@ -21,6 +21,8 @@ function actionCard(view, action, { judgeCooldownUntil = 0 }) {
   switch (action.kind) {
     case "register":
       return card("Join this event", `<button type="button" data-action="register">${escapeHtml(action.label)}</button>`);
+    case "closed":
+      return card("Registration closed", `<p class="muted">The event's start time has passed.</p>`);
     case "registered":
       return card("You're in", `<p class="muted">Check-in opens on the day - you'll check in here.</p>
         <button type="button" class="secondary" data-action="drop-self">Leave this event</button>`);

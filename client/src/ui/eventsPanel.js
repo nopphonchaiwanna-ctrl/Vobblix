@@ -211,12 +211,17 @@ export function initEventsPanel({ getToken, getUserId, onBack, goToMatch, watchT
   function renderEdit() {
     stopTimers();
     clearError();
-    const basicsOnly = view.event.status !== "registration";
+    const { status } = view.event;
+    const mode = status === "registration" ? "full" : status === "check_in" ? "checkin" : "basics";
+    const hint = {
+      checkin: "During check-in, only the name, start time and round time limit can change.",
+      basics: "Once rounds are running, only the name and round time limit can change.",
+    }[mode];
     bodyEl.innerHTML = `
       <p><button type="button" class="link-btn" data-action="cancel-edit">&larr; Back to event</button></p>
       <h2 class="panel-subhead">Edit event</h2>
-      ${basicsOnly ? `<p class="hint">Once check-in opens, only the name and round time limit can change.</p>` : ""}
-      ${eventFormHtml({ values: view.event, submitLabel: "Save changes", basicsOnly, cancelLabel: "Discard" })}`;
+      ${hint ? `<p class="hint">${hint}</p>` : ""}
+      ${eventFormHtml({ values: view.event, submitLabel: "Save changes", mode, cancelLabel: "Discard" })}`;
     bindEventForm(
       bodyEl,
       async (fields) => {

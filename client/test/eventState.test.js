@@ -47,6 +47,12 @@ test("eventSteps: no top-cut step for a Swiss-only event", () => {
   assert.equal(steps[2].state, "now");
 });
 
+test("a non-entrant sees registration closed after the start time", () => {
+  assert.equal(playerAction(view({ registrationOpen: false }), "u9").kind, "closed");
+  assert.equal(playerAction(view({ status: "check_in", registrationOpen: false }), "u9").kind, "closed");
+  assert.equal(playerAction(view({ status: "check_in", registrationOpen: false }, { players: [player("p1", "u1")] }), "u1").kind, "check_in");
+});
+
 test("playerAction covers each stage", () => {
   assert.equal(playerAction(view({}), "u1").kind, "register");
   assert.equal(playerAction(view({}, { players: [player("p1", "u1")] }), "u1").kind, "registered");

@@ -1,9 +1,11 @@
 // Create / edit form for an event. Vanguard events also pick the card
 // pool region (TH/JP) and regulation (Premium / D-Standard); every event
-// picks how players get in (first come, or a lottery the organizer runs).
+// picks how players get in (first come, or a lottery the organizer runs)
+// and when it starts - registration closes at that time.
 
 import { escapeHtml } from "../format.js";
 import { GAME_LABELS, REGION_LABELS, REGULATION_LABELS } from "./common.js";
+import { toLocalInputValue, fromLocalInputValue } from "./listing.js";
 
 function rangeOptions(max, current) {
   let html = "";
@@ -14,11 +16,22 @@ function rangeOptions(max, current) {
 const opt = (value, label, current) =>
   `<option value="${value}"${String(value) === String(current) ? " selected" : ""}>${escapeHtml(label)}</option>`;
 
-/** `basicsOnly`: once rounds run, only name + round time limit can change. */
-export function eventFormHtml({ values = {}, submitLabel, basicsOnly = false, cancelLabel = null }) {
+/**
+ * `mode`: "full" (create, or edit during registration), "checkin" (name +
+ * start time + round time) or "basics" (rounds running: name + round time).
+ */
+export function eventFormHtml({ values = {}, submitLabel, mode = "full", cancelLabel = null }) {
   const limit = values.roundTimeLimitMinutes || 0;
   const game = values.game || "vanguard";
-  const settings = basicsOnly
+  const creating = !values.id;
+  const startField =
+    mode === "basics"
+      ? ""
+      : `<label>Start date &amp; time
+           <input type="datetime-local" id="events-form-starts" value="${escapeHtml(toLocalInputValue(values.startsAt))}"
+             ${creating ? `required min="${toLocalInputValue(new Date().toISOString())}"` : ""} />
+         </label>`;
+  const settings = mode !== "full"
     ? ""
     : `<label>Game
          <select id="events-form-game">${Object.entries(GAME_LABELS).map(([v, l]) => opt(v, l, game)).join("")}</select>
@@ -59,6 +72,7 @@ export function eventFormHtml({ values = {}, submitLabel, basicsOnly = false, ca
       <label>Event name
         <input id="events-form-name" maxlength="80" required value="${escapeHtml(values.name || "")}" />
       </label>
+      ${startField}
       ${settings}
       <fieldset class="duration-fieldset">
         <legend>Round time limit (optional, max 2 days)</legend>
@@ -92,6 +106,8 @@ export function bindEventForm(root, onSubmit, onError) {
     const n = (id) => Math.max(0, Number($(id)?.value) || 0);
     const total = n("events-form-days") * 1440 + n("events-form-hours") * 60 + n("events-form-minutes");
     const fields = { name: $("events-form-name").value.trim(), roundTimeLimitMinutes: total > 0 ? total : null };
+    const starts = $("events-form-starts");
+    if (starts) fields.startsAt = fromLocalInputValue(starts.value);
     if (format) {
       const game = gameSelect.value;
       Object.assign(fields, {

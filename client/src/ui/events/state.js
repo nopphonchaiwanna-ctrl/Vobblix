@@ -40,6 +40,8 @@ export function playerAction(view, userId) {
 
   if (event.status === "registration" || event.status === "check_in") {
     if (!active) {
+      // Past the start time: no new sign-ups (undefined = an older server, treat as open).
+      if (event.registrationOpen === false) return { kind: "closed" };
       const entered = view.players.filter((p) => !p.dropped && p.entryStatus === "entered").length;
       const label =
         event.status === "check_in" || (event.registrationMode === "first_come" && entered >= event.maxPlayers) || event.lotteryDrawnAt

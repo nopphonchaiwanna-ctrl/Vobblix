@@ -3,6 +3,7 @@
 // Watch button), standings, final standings and penalties.
 
 import { escapeHtml } from "../format.js";
+import { formatStartsAt } from "./listing.js";
 
 export const GAME_LABELS = { vanguard: "Cardfight!! Vanguard" };
 export const REGION_LABELS = { th: "TH", jp: "JP" };
@@ -42,6 +43,7 @@ export function formatDuration(ms) {
 export function badgesHtml(event, players) {
   const entered = players.filter((p) => !p.dropped && p.entryStatus === "entered").length;
   const pills = [
+    formatStartsAt(event.startsAt),
     GAME_LABELS[event.game] || event.game,
     event.vanguardRegion ? `${REGION_LABELS[event.vanguardRegion]} · ${REGULATION_LABELS[event.vanguardRegulation] || ""}` : null,
     event.format === "swiss_cut" ? `Swiss + top ${event.effectiveCutSize || event.configuredCutSize}` : "Swiss",
