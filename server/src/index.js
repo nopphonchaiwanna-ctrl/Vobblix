@@ -1,3 +1,4 @@
+import { isWithinTableRange } from "./tableRange.js";
 import http from "node:http";
 import express from "express";
 import cors from "cors";
@@ -308,7 +309,12 @@ io.on("connection", (socket) => {
   socket.on("join-table", async ({ tableId }, ack) => {
     const meta = socketMeta.get(socket.id);
     if (!meta) return;
-    if (!meta.tables.some((t) => t.id === tableId)) return; // unknown table, ignore
+    const table = meta.tables.find((t) => t.id === tableId);
+    if (!table) return; // unknown table, ignore
+    if (!isWithinTableRange(getPlayer(meta.roomId, socket.id), table)) {
+      ack?.({ error: "too-far" });
+      return;
+    }
 
     // Leave previous table room, if any - and end any call there, since a
     // call only ever includes "whoever's at this table right now".
