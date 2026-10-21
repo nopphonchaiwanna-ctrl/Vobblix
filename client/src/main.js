@@ -4,7 +4,7 @@ import { initCallUI } from "./ui/call.js";
 import { createCallManager } from "./webrtc/callManager.js";
 import ShopWorld from "./scene3d/ShopWorld.js";
 import { strings } from "./scene3d/strings.js";
-import { isTextInputFocused } from "./scene3d/input.js";
+import { isTextInputFocused, attachJoystick } from "./scene3d/input.js";
 import { initHud } from "./ui/hud.js";
 import { listNotifications, markNotificationsRead, getIceServers } from "./net/api.js";
 import { login, register, me, applyForOwner, myApplication, publicShops, myShop, blockUser, unblockUser, listBlockedUsers, verifyEmail, resendVerification, forgotPassword, resetPassword } from "./net/api.js";
@@ -1150,6 +1150,7 @@ function enterShop(roomId) {
       callHooks: currentCallTeardown,
     });
     currentWorld.onNearChange(showInteractPrompt);
+    detachJoystick = attachJoystick(joystickEl, joystickEl.firstElementChild, (v) => currentWorld?.setAnalogInput(v));
   });
 }
 
@@ -1203,6 +1204,14 @@ leaveTableBtn.addEventListener("click", () => {
   currentWorld?.leaveTable();
   leaveTableBtn.hidden = true;
 });
+
+// ---------- Touch: thumbstick + soft keyboard ----------
+const joystickEl = document.getElementById("joystick");
+let detachJoystick = null;
+document.getElementById("rotate-text").textContent = strings.rotate;
+// The soft keyboard resizes the visual viewport; keep the 3D canvas
+// matched to it so the scene doesn't stretch behind the keyboard.
+window.visualViewport?.addEventListener("resize", () => currentWorld?.resize());
 
 // ---------- In-shop HUD ----------
 const shopListingsDialog = document.getElementById("shop-listings-dialog");
@@ -1274,6 +1283,8 @@ function leaveShop() {
   getSocket().emit("leave-shop");
   currentCallTeardown?.destroy();
   currentCallTeardown = null;
+  detachJoystick?.();
+  detachJoystick = null;
   currentWorld.destroy();
   leaveTableBtn.hidden = true;
   interactPrompt.hidden = true;

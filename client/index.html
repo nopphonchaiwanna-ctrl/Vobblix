@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content" />
     <title>VobbLiX</title>
     <!-- Applies the saved light/dark theme (see src/prefs.js, toggled
          from the topbar - main.js) before the stylesheet paints
@@ -1195,7 +1195,12 @@
           <span class="interact-key" aria-hidden="true">E</span>
         </div>
         <button type="button" id="leave-table-btn" class="leave-table-btn" hidden></button>
+        <!-- Touch screens: thumbstick for walking (scene3d/input.js). -->
+        <div id="joystick" class="joystick" aria-hidden="true"><div class="joystick-knob"></div></div>
       </div>
+      <!-- Phones held upright: the shop is landscape-only. Covers the
+           screen without stopping anything underneath (call included). -->
+      <div id="rotate-overlay" class="rotate-overlay" role="status"><p id="rotate-text"></p></div>
 
       <aside id="chat-panels">
         <section class="chat-panel" id="shop-chat-panel">
@@ -1411,8 +1416,7 @@
             <button type="submit" disabled>Send</button>
           </form>
           <p class="table-hint" id="table-chat-hint">
-            Only people sitting at the same table see these messages.
-            Voice/video per table is on the roadmap - see README.
+            Only people at this table see these messages.
           </p>
         </section>
       </aside>

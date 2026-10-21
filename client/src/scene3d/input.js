@@ -18,6 +18,73 @@ export function isTextInputFocused() {
   return !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable);
 }
 
+import { joystickVector } from "./joystick.js";
+
+/**
+ * On-screen thumbstick: drag inside `baseEl`; calls onVector({x, y})
+ * (length <= 1, floor space - up on screen is -y) as the thumb moves,
+ * and {0, 0} on release. Every way a touch can end - lifting the thumb,
+ * the OS cancelling it (a notification, rotation), losing capture, the
+ * tab going to the background - releases, so the character never keeps
+ * walking on its own. Returns a detach function.
+ */
+export function attachJoystick(baseEl, knobEl, onVector) {
+  let activeId = null;
+  let center = null;
+  const radius = () => baseEl.clientWidth / 2;
+
+  function move(e) {
+    const dx = e.clientX - center.x;
+    const dy = e.clientY - center.y;
+    const v = joystickVector(dx, dy, radius());
+    knobEl.style.transform = `translate(${v.x * radius() * 0.6}px, ${v.y * radius() * 0.6}px)`;
+    onVector(v);
+  }
+
+  function release() {
+    if (activeId === null) return;
+    activeId = null;
+    knobEl.style.transform = "";
+    onVector({ x: 0, y: 0 });
+  }
+
+  const onDown = (e) => {
+    if (activeId !== null) return;
+    activeId = e.pointerId;
+    const r = baseEl.getBoundingClientRect();
+    center = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    baseEl.setPointerCapture(e.pointerId);
+    e.preventDefault();
+    move(e);
+  };
+  const onMove = (e) => {
+    if (e.pointerId === activeId) move(e);
+  };
+  const onEnd = (e) => {
+    if (e.pointerId === activeId) release();
+  };
+  const onHidden = () => {
+    if (document.hidden) release();
+  };
+
+  baseEl.addEventListener("pointerdown", onDown);
+  baseEl.addEventListener("pointermove", onMove);
+  baseEl.addEventListener("pointerup", onEnd);
+  baseEl.addEventListener("pointercancel", onEnd);
+  baseEl.addEventListener("lostpointercapture", onEnd);
+  document.addEventListener("visibilitychange", onHidden);
+
+  return () => {
+    release();
+    baseEl.removeEventListener("pointerdown", onDown);
+    baseEl.removeEventListener("pointermove", onMove);
+    baseEl.removeEventListener("pointerup", onEnd);
+    baseEl.removeEventListener("pointercancel", onEnd);
+    baseEl.removeEventListener("lostpointercapture", onEnd);
+    document.removeEventListener("visibilitychange", onHidden);
+  };
+}
+
 export function createInput() {
   const held = new Set();
   let analog = { x: 0, y: 0 };

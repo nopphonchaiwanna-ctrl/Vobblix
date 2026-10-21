@@ -2492,3 +2492,157 @@ body.seated #call-panel .call-controls button {
 .hud-menu-item > .icon {
   font-size: 24px;
 }
+
+/* ---------- Touch screens (phones/tablets, landscape) ---------- */
+.joystick {
+  display: none;
+  position: absolute;
+  left: 24px;
+  bottom: 24px;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: rgba(15, 23, 42, 0.35);
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  z-index: 20;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.joystick-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 52px;
+  height: 52px;
+  margin: -26px 0 0 -26px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.8);
+  pointer-events: none;
+}
+
+@media (pointer: coarse) {
+  body.in-shop:not(.seated) .joystick {
+    display: block;
+  }
+}
+
+.rotate-overlay {
+  display: none;
+}
+
+@media (orientation: portrait) and (pointer: coarse) {
+  body.in-shop .rotate-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    display: grid;
+    place-items: center;
+    padding: 32px;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 18px;
+    font-weight: 600;
+    text-align: center;
+  }
+}
+
+/* Short screens (a phone on its side): tighter HUD, and the seated C1
+   view becomes big screen on the left, table chat on the right, the
+   small tiles under the big screen and the call controls bottom-right. */
+@media (max-height: 540px) {
+  .shop-hud {
+    top: 6px;
+    left: 8px;
+    right: 8px;
+  }
+
+  .hud-btn {
+    width: 44px;
+    height: 44px;
+  }
+
+  .hud-menu {
+    top: 50px;
+    grid-template-columns: repeat(3, 84px);
+  }
+
+  .hud-menu-item {
+    height: 64px;
+  }
+
+  body.shop-chat-open #shop-chat-panel {
+    top: 58px;
+    right: 8px;
+    height: calc(100% - 66px);
+  }
+
+  body.seated #call-panel {
+    top: 58px;
+    left: 8px;
+    right: auto;
+    width: 58%;
+    bottom: 8px;
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+
+  body.seated #call-panel .call-tiles {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-rows: minmax(0, 1fr) 56px;
+    grid-auto-rows: 0;
+    gap: 6px;
+  }
+
+  body.seated .call-tile {
+    grid-column: auto;
+    grid-row: 2;
+  }
+
+  body.seated .call-tile.is-big {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+
+  body.seated #table-chat-panel {
+    top: 58px;
+    right: 8px;
+    left: calc(58% + 16px);
+    width: auto;
+    bottom: 112px;
+  }
+
+  body.seated #call-panel .call-controls {
+    position: fixed;
+    right: 8px;
+    bottom: 56px;
+    width: calc(42% - 24px);
+    padding: 0;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  /* Icon-only on a phone: the labels stay in the DOM for screen readers
+     (font-size 0), only the icon is drawn. */
+  body.seated #call-panel .call-controls button {
+    min-height: 44px;
+    min-width: 44px;
+    padding: 4px 8px;
+    font-size: 0;
+  }
+
+  body.seated #call-panel .call-controls button .icon {
+    font-size: 20px;
+    margin: 0;
+  }
+
+  body.seated .leave-table-btn {
+    right: 8px;
+    bottom: 8px;
+    min-height: 44px;
+  }
+
+  .interact-prompt {
+    bottom: 16px;
+  }
+}
