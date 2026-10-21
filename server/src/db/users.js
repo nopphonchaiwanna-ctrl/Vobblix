@@ -102,3 +102,14 @@ export async function latestDeletionRequestForUser(userId) {
   );
   return rows[0] || null;
 }
+
+/** Up to `limit` active accounts whose display name contains q (case-insensitive). */
+export async function searchUsersByName(q, limit = 10) {
+  const { rows } = await pool.query(
+    `SELECT id, display_name FROM users
+     WHERE deleted_at IS NULL AND display_name ILIKE '%' || $1 || '%'
+     ORDER BY display_name LIMIT $2`,
+    [q, limit]
+  );
+  return rows;
+}

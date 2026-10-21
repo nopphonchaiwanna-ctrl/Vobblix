@@ -13,6 +13,10 @@ import { startingRoster } from "../tournament/entry.js";
 import { assignTables } from "../tournament/tables.js";
 import { resolveScene } from "../scenes/index.js";
 import { refreshEventTables } from "../eventTables.js";
+import { createEventNotifier } from "../eventNotify.js";
+import { eventRole } from "../eventAccess.js";
+import * as judging from "../db/judging.js";
+import { publicJudgeCall } from "./judging.js";
 import * as db from "../db/tournaments.js";
 import { createNotification, publicNotification } from "../db/notifications.js";
 import {
@@ -283,16 +287,7 @@ export function createTournamentsRouter(io) {
 
   tournamentsRouter.use(requireAuth);
 
-  // In-app notification + live push to the user's sockets. Best effort:
-  // a failed notification never fails the action that caused it.
-  async function notifyUser(userId, { kind, message, target }) {
-    try {
-      const n = await createNotification({ userId, kind, message, target });
-      io.to(`user:${userId}`).emit("notification:new", publicNotification(n));
-    } catch (err) {
-      console.error(`[events] failed to notify ${kind}`, err);
-    }
-  }
+  const notifyUser = createEventNotifier(io);
 
   tournamentsRouter.post("/", requireRole("shop_owner", "admin"), async (req, res, next) => {
     try {
@@ -343,8 +338,15 @@ export function createTournamentsRouter(io) {
         null
       );
 
+      const myRole = await eventRole(event, req.auth);
+      const staff = myRole === "organizer" || myRole === "judge";
+      const judges = (await judging.listJudges(event.id)).map((j) => ({ userId: j.user_id, displayName: j.display_name }));
+
       res.json({
         event: publicEvent(event),
+        myRole,
+        judges,
+        ...(staff ? { openJudgeCalls: (await judging.listActiveJudgeCalls(event.id)).map(publicJudgeCall) } : {}),
         players: players.map(publicPlayer),
         standings: sorted,
         currentRoundMatches: currentRoundMatches.map(publicMatch),
@@ -438,6 +440,9 @@ export function createTournamentsRouter(io) {
       // During check-in the field is set - newcomers can only join the waitlist.
       if (event.status !== "registration" && event.status !== "check_in") {
         return res.status(409).json({ error: "Registration is closed for this event." });
+      }
+      if (await judging.isJudge(event.id, req.auth.userId)) {
+        return res.status(409).json({ error: "Judges can't play in this event." });
       }
       const player = await db.registerWithEntry(event.id, req.auth.userId);
       res.status(201).json({ player: publicPlayer(player) });
