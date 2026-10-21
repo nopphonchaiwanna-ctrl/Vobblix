@@ -5,6 +5,7 @@ import { createCallManager } from "./webrtc/callManager.js";
 import ShopWorld from "./scene3d/ShopWorld.js";
 import { strings } from "./scene3d/strings.js";
 import { isTextInputFocused } from "./scene3d/input.js";
+import { initHud } from "./ui/hud.js";
 import { listNotifications, markNotificationsRead, getIceServers } from "./net/api.js";
 import { login, register, me, applyForOwner, myApplication, publicShops, myShop, blockUser, unblockUser, listBlockedUsers, verifyEmail, resendVerification, forgotPassword, resetPassword } from "./net/api.js";
 import { getSavedToken, saveToken, clearToken } from "./auth/session.js";
@@ -38,8 +39,6 @@ import { getNotifyOrders, getNotifySound, getTheme, setTheme } from "./prefs.js"
 const authScreen = document.getElementById("auth");
 const lobby = document.getElementById("lobby");
 const gameScreen = document.getElementById("game-screen");
-const leaveShopBtn = document.getElementById("leave-shop-btn");
-const shopEventsBtn = document.getElementById("shop-events-btn");
 
 const authTabLogin = document.getElementById("auth-tab-login");
 const authTabRegister = document.getElementById("auth-tab-register");
@@ -151,22 +150,12 @@ let activeMainPath = "/lobby";
 // navigating to a different shop, or logging out from inside a shop)
 // can cleanly tear both down instead of just hiding the DOM.
 let currentWorld = null;
+// The in-shop HUD (ui/hud.js) - created further down, once the panels it
+// opens exist; renderTopbarNotifBadge() may run before that.
+let hud = null;
 let currentCallTeardown = null;
 let currentShopRoomId = null;
-let currentFloor = null; // { width, height } of the shop floor while in a shop
 
-// The 3D view fills the space beside the chat sidebar; ShopWorld sizes
-// its own canvas to #game (ResizeObserver), this just tells the CSS how
-// much height is left under the topbar.
-const GAME_SCREEN_PAD = 16; // #game-screen padding in style.css
-function sizeGameScreen() {
-  const availHeight = window.innerHeight - topbar.offsetHeight - GAME_SCREEN_PAD * 2;
-  gameScreen.style.setProperty("--game-avail-h", `${Math.max(availHeight, 320)}px`);
-}
-
-window.addEventListener("resize", () => {
-  if (currentWorld) sizeGameScreen();
-});
 // The current shop's DB id (from join-shop's ack), so the topbar's
 // Events menu item knows which shop's events to show - null whenever
 // we're not standing in a shop (see leaveShop()).
@@ -704,6 +693,7 @@ function formatNotifTime(timestamp) {
 function renderTopbarNotifBadge() {
   topbarNotifBadge.hidden = unreadNotifCount === 0;
   topbarNotifBadge.textContent = unreadNotifCount > 9 ? "9+" : String(unreadNotifCount);
+  hud?.setNotifCount(unreadNotifCount);
 }
 
 function renderTopbarNotifList() {
@@ -764,8 +754,13 @@ topbarNotifList.addEventListener("click", (e) => {
 // to it. "toggle" fires for every state change, however it happened
 // (this button, a click outside, Escape, or closeTopbarNotif() above),
 // so aria-expanded and the positioning below never fall out of sync.
+// Which button the dropdown hangs from: the topbar bell, or the in-shop
+// HUD's bell while the topbar is hidden (see ui/hud.js).
+let notifAnchor = topbarNotifBtn;
+
 topbarNotifMenu.addEventListener("toggle", (e) => {
   const isOpen = e.newState === "open";
+  if (!isOpen) notifAnchor = topbarNotifBtn;
   topbarNotifBtn.setAttribute("aria-expanded", String(isOpen));
   if (!isOpen) return;
 
@@ -785,7 +780,7 @@ topbarNotifMenu.addEventListener("toggle", (e) => {
   // broadly supported in Chrome/Firefox yet). Measured after
   // renderTopbarNotifList() above so offsetWidth reflects the real
   // content, not last time's.
-  const rect = topbarNotifBtn.getBoundingClientRect();
+  const rect = notifAnchor.getBoundingClientRect();
   topbarNotifMenu.style.top = `${rect.bottom + 6}px`;
   topbarNotifMenu.style.left = `${rect.right - topbarNotifMenu.offsetWidth}px`;
 });
@@ -1132,14 +1127,15 @@ function enterShop(roomId) {
     shopListings.loadForShop({ isOwnedShop: payload.isOwnedShop, shopDbId: payload.shopDbId });
     currentShopDbId = payload.shopDbId;
     topbarMenuEvents.hidden = !currentShopDbId;
-    shopEventsBtn.hidden = !currentShopDbId;
+    document.getElementById("hud-shop-name").textContent = payload.roomId;
+    document.body.classList.add("in-shop");
+    hud.show(true);
+    setShopChatOpen(false);
 
     // Floor size, table layout and the counter/board positions come
     // entirely from the server (see server/src/scenes/) - the client never
     // hardcodes a shop layout, so a new scene/event type on the server
     // needs no client change here.
-    currentFloor = payload.floor;
-    sizeGameScreen();
     currentWorld = new ShopWorld({
       container: document.getElementById("game-view"),
       socket,
@@ -1169,8 +1165,7 @@ let currentNear = null;
 const PROMPT_LABELS = { table: strings.joinTable, board: strings.viewEvents, counter: strings.openShop };
 
 function showInteractPrompt(near) {
-  // The counter's listings dialog arrives with the in-shop HUD.
-  currentNear = near && near.kind !== "counter" ? near : null;
+  currentNear = near;
   interactPrompt.hidden = !currentNear;
   if (currentNear) interactBtn.textContent = PROMPT_LABELS[currentNear.kind];
 }
@@ -1182,6 +1177,10 @@ async function actOnNear() {
     navigate("/shop-events");
     return;
   }
+  if (near.kind === "counter") {
+    openShopListings();
+    return;
+  }
   if (near.kind === "table") {
     interactBtn.disabled = true;
     const result = await currentWorld.joinTable(near.id);
@@ -1191,6 +1190,7 @@ async function actOnNear() {
       return;
     }
     leaveTableBtn.hidden = false;
+    setShopChatOpen(false); // the table's chat takes the sidebar while seated
     // Same click that sat the player down - mic permission prompt (if
     // any) appears right away. Refusing it still leaves them seated
     // with table chat working.
@@ -1203,6 +1203,54 @@ leaveTableBtn.addEventListener("click", () => {
   currentWorld?.leaveTable();
   leaveTableBtn.hidden = true;
 });
+
+// ---------- In-shop HUD ----------
+const shopListingsDialog = document.getElementById("shop-listings-dialog");
+
+function openShopListings() {
+  if (!shopListingsDialog.open) shopListingsDialog.showModal();
+}
+
+function setShopChatOpen(open) {
+  document.body.classList.toggle("shop-chat-open", open);
+  chatUI.setShopChatOpen(open);
+  hud.setShopChatOpen(open);
+  if (open) document.getElementById("shop-chat-input").focus();
+}
+
+hud = initHud({
+  onToggleShopChat: () => setShopChatOpen(!document.body.classList.contains("shop-chat-open")),
+  onOpenNotifications: (anchor) => {
+    notifAnchor = anchor;
+    topbarNotifMenu.togglePopover();
+  },
+  items: [
+    { id: "shop", label: "Shop", icon: "shopping-bag", onSelect: openShopListings },
+    { id: "events", label: "Events", icon: "trophy", onSelect: () => navigate("/shop-events") },
+    { id: "orders", label: "Orders", icon: "package", onSelect: () => navigate("/orders") },
+    { id: "decks", label: "Decks", icon: "wallet-cards", onSelect: () => navigate("/mydeck") },
+    { id: "settings", label: "Settings", icon: "settings", onSelect: () => navigate("/settings") },
+    {
+      id: "theme",
+      label: "Theme",
+      icon: "sun-moon",
+      onSelect: () => {
+        const next = getTheme() === "light" ? "dark" : "light";
+        setTheme(next);
+        applyTheme(next);
+      },
+    },
+    {
+      id: "my-shop",
+      label: "My shop",
+      icon: "store",
+      visible: () => session?.user?.role === "shop_owner" || session?.user?.role === "admin",
+      onSelect: () => navigate("/my-shop"),
+    },
+    { id: "leave", label: "Leave shop", icon: "log-out", onSelect: () => navigate("/lobby") },
+  ],
+});
+chatUI.onShopUnreadChange((n) => hud.setShopUnread(n));
 window.addEventListener("keydown", (e) => {
   if (!currentWorld || gameScreen.hidden || isTextInputFocused() || e.repeat) return;
   if (e.code === "KeyE" || e.code === "Enter") {
@@ -1229,20 +1277,19 @@ function leaveShop() {
   currentWorld.destroy();
   leaveTableBtn.hidden = true;
   interactPrompt.hidden = true;
-  currentFloor = null;
   currentWorld = null;
   currentShopRoomId = null;
   currentShopDbId = null;
   topbarMenuEvents.hidden = true;
-  shopEventsBtn.hidden = true;
+  document.body.classList.remove("in-shop");
+  hud.show(false);
+  shopListingsDialog.close();
   gameScreen.hidden = true;
 }
 
 // navigate() (not leaveShop() directly) so the /lobby route handler
 // does the actual teardown + screen swap in one place, same as the
 // topbar brand link and the browser's own Back button.
-leaveShopBtn.addEventListener("click", () => navigate("/lobby"));
-shopEventsBtn.addEventListener("click", () => navigate("/shop-events"));
 
 joinBtn.addEventListener("click", () => joinShopByCode(roomInput.value));
 roomInput.addEventListener("keydown", (e) => {

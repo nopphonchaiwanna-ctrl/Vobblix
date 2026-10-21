@@ -7,6 +7,7 @@
 
 import { getOrder, postOrderMessage, setOrderStatus } from "../net/api.js";
 import { formatTHB, escapeHtml, statusLabel } from "./format.js";
+import { showPanelScreen } from "./screens.js";
 
 function el(id) {
   return document.getElementById(id);
@@ -20,10 +21,10 @@ const NEXT_STATUS = {
   },
 };
 
-// Every other full-screen panel in the app - opening the thread hides
-// whichever of these is currently showing; closing it restores whichever
-// one the caller says to go back to (see `returnTo` in open()).
-const SCREEN_IDS = ["lobby", "owner-dashboard", "admin-panel", "orders-panel", "game-screen"];
+// Opening the thread hides whichever main screen is showing (see
+// ui/screens.js - inside a shop it opens over the 3D view instead);
+// closing it restores whichever one the caller says to go back to (see
+// `returnTo` in open()).
 
 export function initOrderThread({ getToken, getUserId }) {
   const screen = el("order-thread");
@@ -90,11 +91,7 @@ export function initOrderThread({ getToken, getUserId }) {
       returnToEl = returnTo || null;
       renderHeader();
       renderMessages();
-      for (const id of SCREEN_IDS) {
-        const s = el(id);
-        if (s) s.hidden = true;
-      }
-      screen.hidden = false;
+      showPanelScreen(screen);
     } catch (err) {
       errorEl.textContent = err.message;
       errorEl.hidden = false;

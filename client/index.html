@@ -1173,48 +1173,17 @@
 
     <!-- Game: hidden until the player joins -->
     <div id="game-screen" hidden>
-      <!-- The topbar brand link (click "VobbLiX" -> navigate to /lobby)
-           already leaves the shop too, but that's not an obvious exit
-           affordance once you're deep in a shop looking at the canvas -
-           this makes it explicit and reachable right where you are. -->
-      <button type="button" id="leave-shop-btn" class="leave-shop-btn" title="Leave shop" aria-label="Leave shop"><span class="icon"><svg
-  class="lucide lucide-log-out"
-  xmlns="http://www.w3.org/2000/svg"
-  width="24"
-  height="24"
-  viewBox="0 0 24 24"
-  fill="none"
-  stroke="currentColor"
-  stroke-width="2"
-  stroke-linecap="round"
-  stroke-linejoin="round"
->
-  <path d="m16 17 5-5-5-5" />
-  <path d="M21 12H9" />
-  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-</svg></span></button>
-      <!-- This shop's events, one click from the floor (same target as
-           the topbar menu's Events item, which is easy to miss). Shown
-           only when the shop has a DB id - see main.js's join-shop ack. -->
-      <button type="button" id="shop-events-btn" class="shop-events-btn" hidden><span class="icon"><svg
-  class="lucide lucide-trophy"
-  xmlns="http://www.w3.org/2000/svg"
-  width="24"
-  height="24"
-  viewBox="0 0 24 24"
-  fill="none"
-  stroke="currentColor"
-  stroke-width="2"
-  stroke-linecap="round"
-  stroke-linejoin="round"
->
-  <path d="M10 14.66V17a1 1 0 0 1-1 1 2 2 0 0 0-2 2v2" />
-  <path d="M14 14.66V17a1 1 0 0 0 1 1 2 2 0 0 1 2 2v2" />
-  <path d="M17.916 10H19.5A2.5 2.5 0 0 0 22 7.5V5a1 1 0 0 0-1-1h-3" />
-  <path d="M4 22h16" />
-  <path d="M6 9a6 6 0 0 0 12 0V3a1 1 0 0 0-1-1H7a1 1 0 0 0-1 1z" />
-  <path d="M6.084 10H4.5A2.5 2.5 0 0 1 2 7.5V5a1 1 0 0 1 1-1h3" />
-</svg></span>Events</button>
+      <!-- In-shop HUD (ui/hud.js) - stands in for the topbar while
+           inside a shop, so the 3D view gets the whole screen. -->
+      <div id="shop-hud" class="shop-hud" hidden>
+        <span id="hud-shop-name" class="hud-shop-name"></span>
+        <div class="hud-buttons">
+          <button type="button" id="hud-chat-btn" class="hud-btn" aria-pressed="false" title="Shop chat" aria-label="Shop chat"><span id="hud-chat-badge" class="hud-badge" hidden>0</span></button>
+          <button type="button" id="hud-bell-btn" class="hud-btn" title="Notifications" aria-label="Notifications"><span id="hud-bell-badge" class="hud-badge" hidden>0</span></button>
+          <button type="button" id="hud-menu-btn" class="hud-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="hud-menu" title="Menu" aria-label="Menu"></button>
+        </div>
+        <div id="hud-menu" class="hud-menu" role="menu" aria-label="Shop menu" hidden></div>
+      </div>
       <div id="game">
         <!-- ShopWorld (scene3d/) renders into #game-view; the overlays
              below sit on top of the 3D view and are never replaced. -->
@@ -1281,26 +1250,7 @@
              owner-created marketplace shop (see main.js's isOwnedShop
              flag from join-shop's ack) - an ad-hoc hangout room has no
              listings and hides this panel entirely. -->
-        <section class="chat-panel" id="shop-listings-panel" hidden>
-          <header><span class="icon"><svg
-  class="lucide lucide-shopping-bag"
-  xmlns="http://www.w3.org/2000/svg"
-  width="24"
-  height="24"
-  viewBox="0 0 24 24"
-  fill="none"
-  stroke="currentColor"
-  stroke-width="2"
-  stroke-linecap="round"
-  stroke-linejoin="round"
->
-  <path d="M16 10a4 4 0 0 1-8 0" />
-  <path d="M3.103 6.034h17.794" />
-  <path d="M3.4 5.467a2 2 0 0 0-.4 1.2V20a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6.667a2 2 0 0 0-.4-1.2l-2-2.667A2 2 0 0 0 17 2H7a2 2 0 0 0-1.6.8z" />
-</svg></span>Shop listings</header>
-          <div class="list listings-panel-list" id="shop-listings-list"></div>
-          <p class="table-hint error" id="shop-listings-error" hidden></p>
-        </section>
+
 
         <!-- Voice/video call for whoever's currently at the same table -
              hidden unless seated (see main.js's setupCall). Pressing
@@ -1466,6 +1416,31 @@
           </p>
         </section>
       </aside>
+
+      <!-- The shop's listings - opened from the counter or the ⊞ menu. -->
+      <dialog id="shop-listings-dialog" class="shop-listings-dialog" aria-labelledby="shop-listings-title">
+        <section class="chat-panel" id="shop-listings-panel">
+            <header><span class="icon"><svg
+    class="lucide lucide-shopping-bag"
+    xmlns="http://www.w3.org/2000/svg"
+    width="24"
+    height="24"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <path d="M16 10a4 4 0 0 1-8 0" />
+    <path d="M3.103 6.034h17.794" />
+    <path d="M3.4 5.467a2 2 0 0 0-.4 1.2V20a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6.667a2 2 0 0 0-.4-1.2l-2-2.667A2 2 0 0 0 17 2H7a2 2 0 0 0-1.6.8z" />
+  </svg></span><span id="shop-listings-title">Shop listings</span></header>
+            <div class="list listings-panel-list" id="shop-listings-list"></div>
+            <p class="table-hint error" id="shop-listings-error" hidden></p>
+          </section>
+        <form method="dialog"><button type="submit" class="dialog-close" aria-label="Close">Close</button></form>
+      </dialog>
     </div>
 
     <!-- Floating order-alert toasts (see ui/toast.js) - lives outside

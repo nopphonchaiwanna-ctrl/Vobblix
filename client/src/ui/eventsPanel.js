@@ -27,6 +27,7 @@ import { showToast } from "./toast.js";
 import { confirmDialog } from "./confirmDialog.js";
 import { icon } from "./icons.js";
 import { initDashboardNav } from "./dashboardNav.js";
+import { showPanelScreen } from "./screens.js";
 
 function el(id) {
   return document.getElementById(id);
@@ -623,10 +624,7 @@ export function initEventsPanel({ getToken, getUserId, onBack }) {
   return {
     /** Exactly one of shopId/eventId - shopId opens the list, eventId opens straight to one event's detail. */
     async open({ shopId: openShopId, eventId: openEventId } = {}) {
-      document
-        .querySelectorAll("#auth, #lobby, #game-screen, #owner-dashboard, #admin-panel, #orders-panel, #order-thread, #settings-panel, #decks-panel")
-        .forEach((s) => (s.hidden = true));
-      screen.hidden = false;
+      showPanelScreen(screen);
 
       if (openEventId) {
         eventId = openEventId;

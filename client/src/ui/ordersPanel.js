@@ -5,6 +5,7 @@
 import { myOrders } from "../net/api.js";
 import { formatTHB, escapeHtml, statusLabel } from "./format.js";
 import { initDashboardNav } from "./dashboardNav.js";
+import { showPanelScreen } from "./screens.js";
 
 function el(id) {
   return document.getElementById(id);
@@ -53,8 +54,7 @@ export function initOrdersPanel({ getToken, getUserId, orderThread, onBack }) {
 
   return {
     async open() {
-      document.querySelectorAll("#auth, #lobby, #game-screen, #owner-dashboard, #admin-panel, #order-thread, #settings-panel, #events-panel").forEach((s) => (s.hidden = true));
-      screen.hidden = false;
+      showPanelScreen(screen);
       await render();
     },
     refresh: render,

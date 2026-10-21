@@ -64,6 +64,15 @@ export function initChatUI() {
   // main.js) rather than threaded through every append call.
   let ownUserId = null;
   let blockedIds = new Set();
+  // In-shop HUD: the shop chat panel can be closed; messages arriving
+  // while it is count as unread (system lines don't).
+  let shopChatOpen = true;
+  let shopUnread = 0;
+  let onShopUnread = null;
+  function setUnread(n) {
+    shopUnread = n;
+    onShopUnread?.(n);
+  }
 
   shopForm.addEventListener("submit", (e) => {
     e.preventDefault();
@@ -119,6 +128,8 @@ export function initChatUI() {
     // never briefly shows the last one's messages or roster.
     reset(shopName) {
       this.setShopName(shopName);
+      shopChatOpen = true; // replaying history shouldn't count as unread
+      setUnread(0);
       shopLog.innerHTML = "";
       this.clearTableLog();
       this.setSeatedAt(null);
@@ -126,6 +137,15 @@ export function initChatUI() {
     },
     appendShopMessage(msg) {
       appendMessage(shopLog, msg, { blockedIds, ownUserId });
+      if (!shopChatOpen && !msg.system && !blockedIds.has(msg.authorId)) setUnread(shopUnread + 1);
+    },
+    /** Opening the shop chat marks everything in it read. */
+    setShopChatOpen(open) {
+      shopChatOpen = open;
+      if (open) setUnread(0);
+    },
+    onShopUnreadChange(cb) {
+      onShopUnread = cb;
     },
     appendTableMessage(msg) {
       appendMessage(tableLog, msg, { blockedIds, ownUserId });

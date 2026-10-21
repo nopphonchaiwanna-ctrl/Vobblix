@@ -26,6 +26,7 @@ import { escapeHtml } from "./format.js";
 import { attachPasswordChecklist, attachConfirmPasswordCheck } from "./passwordChecklist.js";
 import { requestAccountDeletionDialog } from "./confirmDialog.js";
 import { getNotifyOrders, setNotifyOrders, getNotifySound, setNotifySound } from "../prefs.js";
+import { showPanelScreen } from "./screens.js";
 
 function el(id) {
   return document.getElementById(id);
@@ -264,10 +265,7 @@ export function initSettingsPanel({ getToken, getSession, onBack, onProfileChang
 
   return {
     async open() {
-      document
-        .querySelectorAll("#auth, #lobby, #game-screen, #owner-dashboard, #admin-panel, #orders-panel, #order-thread, #events-panel")
-        .forEach((s) => (s.hidden = true));
-      screen.hidden = false;
+      showPanelScreen(screen);
 
       profileError.hidden = true;
       profileSuccess.hidden = true;

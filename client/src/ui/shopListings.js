@@ -1,6 +1,7 @@
-// In-shop listings panel (#shop-listings-panel, in the game sidebar) -
-// only shown while standing in an owner-created marketplace shop (see
-// main.js's isOwnedShop flag from join-shop's ack). "Message seller"
+// In-shop listings (#shop-listings-panel, inside #shop-listings-dialog,
+// opened from the shop's counter or the HUD menu). Only owner-created
+// marketplace shops have listings (see main.js's isOwnedShop flag from
+// join-shop's ack); any other shop shows the empty state. "Message seller"
 // starts a new order (server/src/routes/orders.js's POST /orders) and
 // hands off to ui/orderThread.js for the actual conversation, returning
 // to the live game screen when the thread is closed.
@@ -14,7 +15,6 @@ function el(id) {
 }
 
 export function initShopListings({ getToken, orderThread }) {
-  const panel = el("shop-listings-panel");
   const listEl = el("shop-listings-list");
   const errorEl = el("shop-listings-error");
 
@@ -67,6 +67,7 @@ export function initShopListings({ getToken, orderThread }) {
       try {
         const { order } = await createOrder(getToken(), { listingId: sendId, message: text });
         composingId = null;
+        el("shop-listings-dialog").close(); // the thread replaces it, top layer would cover it
         await orderThread.open(order.id, { returnTo: el("game-screen") });
       } catch (err) {
         errorEl.textContent = err.message;
@@ -76,14 +77,18 @@ export function initShopListings({ getToken, orderThread }) {
   });
 
   return {
+    // Every shop has a counter now - a shop without listings (an ad-hoc
+    // room, or an owner who hasn't listed anything) just shows the empty
+    // state instead of hiding the panel.
     async loadForShop({ isOwnedShop, shopDbId: id }) {
+      composingId = null;
       if (!isOwnedShop) {
-        panel.hidden = true;
         shopDbId = null;
+        listings = [];
+        render();
         return;
       }
       shopDbId = id;
-      panel.hidden = false;
       try {
         const res = await fetchListings(shopDbId);
         listings = res.listings || [];

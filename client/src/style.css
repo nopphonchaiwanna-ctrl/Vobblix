@@ -349,25 +349,23 @@ button.white {
 
 /* ---------- Game screen ---------- */
 
+/* Only ever shown inside a shop: the 3D view takes the whole window
+   (the topbar steps aside for the in-shop HUD - see ui/hud.js), and
+   chat/call panels float over it. */
 #game-screen {
-  display: flex;
-  height: 100%;
-  align-items: flex-start;
-  justify-content: center;
-  gap: 16px;
-  padding: 16px;
+  position: fixed;
+  inset: 0;
+  z-index: 1;
 }
 
-/* The 3D shop (scene3d/ShopWorld.js) - fills whatever space is left
-   beside the chat sidebar; the renderer sizes itself to this box. */
+body.in-shop #app-topbar {
+  display: none;
+}
+
 #game {
-  position: relative;
-  flex: 1;
-  min-width: 0;
-  height: var(--game-avail-h, 700px);
-  border-radius: 12px;
+  position: absolute;
+  inset: 0;
   overflow: hidden;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
   background: #1b2634;
 }
 
@@ -467,70 +465,41 @@ button.white {
   max-width: 420px;
 }
 
-/* Floats over the top-left corner of the canvas - opaque panel
-   background (not the usual transparent topbar-button style) since
-   this sits directly on top of whatever the shop floor is rendering,
-   which the theme can't account for. Icon-only - the "Leave shop"
-   label lives in its title/aria-label instead (shown as a native
-   tooltip on hover/hold), not as visible text. */
-.leave-shop-btn {
-  position: absolute;
-  top: 16px;
-  left: 16px;
-  z-index: 50;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  padding: 0;
-  background: var(--panel);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: 0 8px 20px var(--shadow);
-}
-
-.leave-shop-btn:hover {
-  background: var(--surface);
-  border-color: var(--accent);
-}
-
-/* Sits right of the leave button, same chrome. */
-.shop-events-btn {
-  position: absolute;
-  top: 16px;
-  left: 60px;
-  z-index: 50;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 36px;
-  padding: 0 12px;
-  background: var(--panel);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: 0 8px 20px var(--shadow);
-}
-
-.shop-events-btn[hidden] {
-  display: none;
-}
-
-.shop-events-btn:hover {
-  background: var(--surface);
-  border-color: var(--accent);
-}
-
+/* No box of its own - each panel inside places itself over the 3D view
+   (shop chat when opened from the HUD, table chat + call while seated). */
 #chat-panels {
-  width: 300px;
+  display: contents;
+}
+
+#shop-chat-panel,
+#table-chat-panel {
+  position: absolute;
+  right: 16px;
+  width: min(320px, calc(100vw - 32px));
+  z-index: 25;
+  display: none;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
+}
+
+body.shop-chat-open #shop-chat-panel {
   display: flex;
-  flex-direction: column;
-  gap: 12px;
-  /* --game-avail-h: the window height left under the topbar, set by
-     main.js's fitGameViewport() - 700px is the old fixed height. */
-  height: min(700px, var(--game-avail-h, 700px));
+  top: 72px;
+  height: min(480px, calc(100% - 88px));
+}
+
+body.seated #table-chat-panel {
+  display: flex;
+  top: 72px;
+  bottom: 16px;
+}
+
+/* Seated with the shop chat opened too: shop chat on top, table chat below. */
+body.seated.shop-chat-open #shop-chat-panel {
+  height: calc(40% - 44px);
+}
+
+body.seated.shop-chat-open #table-chat-panel {
+  top: calc(40% + 40px);
 }
 
 .chat-panel {
@@ -940,12 +909,6 @@ button.danger {
    window/document), this blows the same panel up into a large floating
    overlay above the game, with a click-outside backdrop - simpler and
    more reliable than window.open() for video. */
-/* Positions #call-panel.expanded relative to the game area instead of
-   the viewport - see the rule below. */
-#game-screen {
-  position: relative;
-}
-
 #call-panel.expanded {
   position: absolute;
   /* Matches #game-screen's own padding/gap (16px) plus the sidebar's
@@ -2252,7 +2215,7 @@ dialog.app-dialog textarea {
    aside so the sidebar is just this table's chat. */
 body.seated #call-panel {
   position: absolute;
-  top: 64px;
+  top: 72px;
   left: 16px;
   right: 332px;
   bottom: 96px;
@@ -2351,10 +2314,6 @@ body.seated .leave-table-btn {
   z-index: 40;
 }
 
-body.seated #shop-chat-panel,
-body.seated #shop-listings-panel {
-  display: none;
-}
 
 body.seated #call-panel .call-controls > button,
 body.seated #call-panel .call-controls > .split-btn {
@@ -2364,4 +2323,172 @@ body.seated #call-panel .call-controls > .split-btn {
 
 body.seated #call-panel .call-controls button {
   padding: 8px 12px;
+}
+
+/* ---------- In-shop HUD (ui/hud.js) ---------- */
+.shop-hud {
+  position: absolute;
+  top: 12px;
+  left: 16px;
+  right: 16px;
+  z-index: 35;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  pointer-events: none;
+}
+
+.shop-hud[hidden] {
+  display: none;
+}
+
+.shop-hud > * {
+  pointer-events: auto;
+}
+
+.hud-shop-name {
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.72);
+  color: #f8fafc;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.hud-buttons {
+  display: flex;
+  gap: 8px;
+}
+
+.hud-btn {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(15, 23, 42, 0.82);
+  color: #f8fafc;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+}
+
+.hud-btn:hover,
+.hud-btn[aria-pressed="true"],
+.hud-btn[aria-expanded="true"] {
+  border-color: var(--accent);
+}
+
+.hud-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--danger, #e5484d);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+}
+
+.hud-badge[hidden] {
+  display: none;
+}
+
+/* The ⊞ menu: a 3x3 grid - new in-shop features become another cell. */
+.hud-menu {
+  position: absolute;
+  top: 58px;
+  right: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 92px);
+  gap: 8px;
+  padding: 10px;
+  border-radius: 16px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+}
+
+.hud-menu[hidden] {
+  display: none;
+}
+
+.hud-menu-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 80px;
+  padding: 6px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.hud-menu-item:hover,
+.hud-menu-item:focus-visible {
+  border-color: var(--accent);
+}
+
+/* ---------- Shop listings dialog (counter / ⊞ menu) ---------- */
+.shop-listings-dialog {
+  width: min(520px, 92vw);
+  max-height: 80vh;
+  padding: 0;
+  border: none;
+  border-radius: 14px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
+}
+
+.shop-listings-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.shop-listings-dialog::backdrop {
+  background: rgba(2, 6, 23, 0.55);
+}
+
+.shop-listings-dialog #shop-listings-panel {
+  min-height: 0;
+  overflow: auto;
+}
+
+.shop-listings-dialog form {
+  display: flex;
+  justify-content: flex-end;
+  padding: 10px 12px;
+  border-top: 1px solid var(--divider);
+}
+
+/* ---------- Panels opened from inside a shop (ui/screens.js) ----------
+   Settings/Orders/Decks/Events/an order thread open over the running 3D
+   shop instead of replacing it, so a seat and a live call survive. */
+.over-shop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  overflow: auto;
+  background: color-mix(in srgb, var(--bg) 94%, transparent);
+}
+
+/* .icon is 1em square - size HUD icons through font-size. */
+.hud-btn > .icon {
+  font-size: 22px;
+}
+
+.hud-menu-item > .icon {
+  font-size: 24px;
 }

@@ -16,6 +16,7 @@ import { listDecks, getDeck, importDeck, deleteDeck } from "../net/api.js";
 import { escapeHtml } from "./format.js";
 import { initDashboardNav } from "./dashboardNav.js";
 import { confirmDialog } from "./confirmDialog.js";
+import { showPanelScreen } from "./screens.js";
 
 function el(id) {
   return document.getElementById(id);
@@ -312,10 +313,7 @@ export function initDecksPanel({ getToken, onBack }) {
 
   return {
     async open() {
-      document
-        .querySelectorAll("#auth, #lobby, #game-screen, #owner-dashboard, #admin-panel, #orders-panel, #order-thread, #settings-panel, #events-panel")
-        .forEach((s) => (s.hidden = true));
-      screen.hidden = false;
+      showPanelScreen(screen);
       mode = "list";
       deckId = null;
       await renderList();
