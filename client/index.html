@@ -1431,6 +1431,19 @@
 
       </aside>
 
+      <!-- "Get alerts for this event?" - see src/net/push.js. -->
+      <dialog id="push-consent-dialog" class="app-dialog" aria-labelledby="push-consent-title">
+        <form method="dialog">
+          <h2 id="push-consent-title">Get event alerts?</h2>
+          <p>We'll ping you when pairings go up or a spot opens - only for <strong data-event-name></strong>.</p>
+          <p class="hint" data-ios-hint hidden>On iPhone: tap Share → Add to Home Screen, open VobbLiX from there, then allow alerts.</p>
+          <div class="dialog-actions">
+            <button type="submit" value="no" class="secondary">Not now</button>
+            <button type="submit" value="yes" data-yes>Allow alerts</button>
+          </div>
+        </form>
+      </dialog>
+
       <!-- The shop's listings - opened from the counter or the ⊞ menu. -->
       <dialog id="shop-listings-dialog" class="shop-listings-dialog" aria-labelledby="shop-listings-title">
         <section class="chat-panel" id="shop-listings-panel">

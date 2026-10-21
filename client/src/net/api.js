@@ -329,3 +329,17 @@ export function importDeck(token, { deckCode, sourceLocale }) {
 export function deleteDeck(token, deckId) {
   return request(`/decks/${deckId}`, { method: "DELETE", token });
 }
+
+// ---------- Event alerts (Web Push) ----------
+
+export function getPushKey(token) {
+  return request("/notifications/push-key", { token });
+}
+
+export function savePushSubscription(token, subscription) {
+  return request("/notifications/push-subscriptions", { method: "POST", token, body: JSON.stringify(subscription) });
+}
+
+export function setEventPushConsent(token, eventId, granted) {
+  return request(`/events/${eventId}/push-consent`, { method: "PUT", token, body: JSON.stringify({ granted }) });
+}
