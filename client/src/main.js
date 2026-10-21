@@ -935,9 +935,17 @@ function doLogout() {
 function setupCall(callUI, chatUI) {
   const manager = createCallManager({
     fetchIceServers: async () => (await getIceServers(getToken())).iceServers,
+    getUserId,
+    // Match tables (event day): spectators get no mic/camera, and nobody
+    // but the players + staff is heard here (webrtc/speakers.js).
+    onRoleChanged: (role) => {
+      callUI.setSpectator(role === "spectator");
+      for (const id of callUI.peerIds()) callUI.setPeerAllowed(id, manager.canPlay(id));
+    },
     onLocalStream: (stream) => callUI.setLocalStream(stream),
     onPeerJoined: (peer) => {
       callUI.addPeer(peer);
+      callUI.setPeerAllowed(peer.id, manager.canPlay(peer.id));
       chatUI.addVoiceParticipant(peer);
     },
     onPeerLeft: (id) => {
@@ -1150,6 +1158,7 @@ function enterShop(roomId) {
       callHooks: currentCallTeardown,
     });
     currentWorld.onNearChange(showInteractPrompt);
+    for (const resolve of worldWaiters.splice(0)) resolve(currentWorld);
     if (!currentWorld.hasScene) openChat("shop", { focus: false }); // chat-only mode: show the one thing that works
     detachJoystick = attachJoystick(joystickEl, joystickEl.firstElementChild, (v) => currentWorld?.setAnalogInput(v));
   });
@@ -1173,6 +1182,73 @@ function showInteractPrompt(near) {
   if (currentNear) interactBtn.textContent = PROMPT_LABELS[currentNear.kind];
 }
 
+// Shared by "Join table" and the event views' "Go to table" / "Watch".
+function afterSeated() {
+  leaveTableBtn.hidden = false;
+  setTableTab(true); // the table's chat takes the dock while seated
+  // Same click that sat the player down - mic permission prompt (if any)
+  // appears right away. Refusing it still leaves them seated with table
+  // chat working. At a match table the server may make this a spectator.
+  currentCallTeardown?.joinCall();
+}
+
+// ---------- Event day: go to my match / watch a table ----------
+let worldWaiters = [];
+
+/** Resolves with the 3D shop for `code`, entering it first if needed. */
+function ensureInShop(code) {
+  if (currentWorld && currentShopRoomId === code && !currentWorld.destroyed) return Promise.resolve(currentWorld);
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("Couldn't enter the shop.")), 15000);
+    worldWaiters.push((world) => {
+      clearTimeout(timer);
+      resolve(world);
+    });
+    navigate(`/shop/${encodeURIComponent(code)}`);
+  });
+}
+
+async function sitAt(world, tableId, spot) {
+  if (world.currentTableId === tableId) return true;
+  if (world.currentTableId) leaveTable();
+  const result = await world.goToTable(tableId, spot);
+  if (!result.ok) {
+    showToast(result.reason === "too-far" ? strings.tooFar : "Couldn't get to that table - try again.");
+    return false;
+  }
+  afterSeated();
+  return true;
+}
+
+/** Player: straight to this event's current match (in-shop or online table). */
+async function goToMatch(eventId, shopCode) {
+  try {
+    const world = await ensureInShop(shopCode);
+    const spot = await new Promise((resolve) => getSocket().emit("go-to-match", { eventId }, resolve));
+    if (spot?.error) {
+      showToast("You don't have a match to play right now.");
+      return;
+    }
+    if (await sitAt(world, spot.tableId, spot)) navigate(`/shop/${encodeURIComponent(shopCode)}`);
+  } catch (err) {
+    showToast(err.message);
+  }
+}
+
+/** Anyone: watch a match table (online by id, or an in-shop table by number). */
+async function watchTable(shopCode, { tableId = null, tableNumber = null } = {}) {
+  try {
+    const world = await ensureInShop(shopCode);
+    const inShop = tableId ? null : world.tables[tableNumber - 1];
+    const id = tableId || inShop?.id;
+    if (!id) return;
+    const spot = inShop ? { online: false, x: inShop.x, y: inShop.y + Math.round(inShop.radius * 0.6) } : { online: true };
+    if (await sitAt(world, id, spot)) navigate(`/shop/${encodeURIComponent(shopCode)}`);
+  } catch (err) {
+    showToast(err.message);
+  }
+}
+
 async function actOnNear() {
   const near = currentNear;
   if (!near || !currentWorld) return;
@@ -1192,12 +1268,7 @@ async function actOnNear() {
       if (result.reason === "too-far") showToast(strings.tooFar);
       return;
     }
-    leaveTableBtn.hidden = false;
-    setTableTab(true);
-    // Same click that sat the player down - mic permission prompt (if
-    // any) appears right away. Refusing it still leaves them seated
-    // with table chat working.
-    currentCallTeardown?.joinCall();
+    afterSeated();
   }
 }
 

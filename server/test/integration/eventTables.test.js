@@ -87,6 +87,7 @@ describe("event match tables", { skip: SKIP_REASON }, () => {
     const watch = await emit(bs, "join-call", {});
     assert.equal(watch.ok, true);
     assert.equal(watch.role, "spectator");
+    assert.ok(watch.peers.some((p) => p.userId === player.id), "peers carry their account id for the client-side lock");
     assert.deepEqual(await emit(bs, "enable-video", {}), { ok: false, reason: "spectator" });
   });
 
@@ -105,6 +106,11 @@ describe("event match tables", { skip: SKIP_REASON }, () => {
     const viewer = await enterShop(players[10].token);
     assert.ok(!(await emit(viewer, "join-table", { tableId: go.tableId }))?.error, "no range check for online tables");
     assert.equal((await emit(viewer, "join-call", {})).role, "spectator");
+  });
+
+  test("the event view tells the client which shop to go to", async () => {
+    const { body } = await api.get(`/events/${event.id}`, players[0].token);
+    assert.equal(body.shopCode, "tables");
   });
 
   test("an unknown online table can't be joined", async () => {

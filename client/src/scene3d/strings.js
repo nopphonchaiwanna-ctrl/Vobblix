@@ -13,4 +13,6 @@ export const strings = {
   rotate: "Turn your phone sideways to play.",
   characterAppliesNextVisit: "Your new look shows up next time you enter a shop.",
   eventsBoard: "EVENTS",
+  watchingMatch: "This table is in a match - you're watching.",
+  onlineTable: (n) => `Table ${n} (online)`,
 };

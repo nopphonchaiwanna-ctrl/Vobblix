@@ -2826,3 +2826,14 @@ body.seated #call-panel .call-controls button {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+/* Watching a match (event table lock): no mic/camera/deafen controls. */
+#call-panel.spectating #call-mute-split,
+#call-panel.spectating #call-camera-split {
+  display: none !important;
+}
+
+/* A peer we don't play at a match table - nothing of theirs is shown. */
+.call-tile.blocked video {
+  visibility: hidden;
+}

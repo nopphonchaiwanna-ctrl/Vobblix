@@ -313,7 +313,7 @@ export default class ShopWorld {
    * Resolves {ok:false, reason} without changing anything if refused.
    */
   async joinTable(tableId) {
-    const table = this.tables.find((t) => t.id === tableId);
+    const table = this.tables.find((t) => t.id === tableId) || onlineTable(tableId);
     if (!table || this.currentTableId) return { ok: false, reason: "unknown" };
     if (this.joining) return { ok: false, reason: "busy" }; // a second E/tap while the first is in flight
     this.joining = true;
@@ -339,7 +339,8 @@ export default class ShopWorld {
       this.chatUI.appendTableMessage({ from: msg.author_name, text: msg.text, authorId: msg.user_id });
     }
     this.callHooks?.onTableChanged(table.label);
-    this.rig.toSeated(table, { instant: prefersReducedMotion() });
+    // An online match table has no spot on the floor - the camera stays put.
+    if (!table.online) this.rig.toSeated(table, { instant: prefersReducedMotion() });
     document.body.classList.add("seated");
     this.updateNear();
     return { ok: true, table };
@@ -356,6 +357,21 @@ export default class ShopWorld {
     this.setMovementLocked(false);
     this.rig.toFollow({ instant: prefersReducedMotion() });
     document.body.classList.remove("seated");
+  }
+
+  /**
+   * Event "Go to table" / "Watch": stand beside an in-shop table (the
+   * server's go-to-match gives the spot) and join it, or join an online
+   * table straight away.
+   */
+  goToTable(tableId, { online = false, x = null, y = null } = {}) {
+    if (!online && Number.isFinite(x) && Number.isFinite(y)) {
+      this.pos = { x, y };
+      this.player?.setFloorPosition(x, y);
+      this.socket.emit("move", { x, y }); // before join-table, so the range check sees it
+      this.lastSent = { x, y };
+    }
+    return this.joinTable(tableId);
   }
 
   /** Thumbstick input from the mobile HUD, floor-space vector of length <= 1. */
@@ -453,6 +469,12 @@ export default class ShopWorld {
     this.near = found;
     for (const cb of this.nearListeners) cb(found);
   }
+}
+
+/** "event:<id>:t7" -> a table-like record for the seated view (no floor spot). */
+function onlineTable(tableId) {
+  const m = /^event:.+:t(\d+)$/.exec(String(tableId));
+  return m ? { id: tableId, label: strings.onlineTable(Number(m[1])), online: true } : null;
 }
 
 function prefersReducedMotion() {

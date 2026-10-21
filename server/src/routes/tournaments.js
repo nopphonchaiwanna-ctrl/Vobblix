@@ -350,6 +350,8 @@ export function createTournamentsRouter(io) {
 
       res.json({
         event: publicEvent(event),
+        // The shop's lobby code - "Go to table" / "Watch" enter it first if needed.
+        shopCode: (await getShopById(event.shop_id))?.code ?? null,
         myRole,
         // Did this user answer "alerts for this event?" - null = not asked yet.
         myPushConsent: await pushStore.getConsent(event.id, req.auth.userId),

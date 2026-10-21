@@ -18,6 +18,7 @@
 
 import { getSocket } from "../net/socket.js";
 import { isPolite, offerCollision, shouldIgnoreAnswer } from "./negotiation.js";
+import { shouldPlayPeerMedia } from "./speakers.js";
 
 // Used until (or if) the server's list arrives - see join().
 const FALLBACK_ICE_SERVERS = [{ urls: "stun:stun.l.google.com:19302" }];
@@ -43,6 +44,8 @@ const VIDEO_MAX_BITRATE = 1_500_000; // bps per outgoing stream
  *   onSpeakingChanged?: (id: string, speaking: boolean) => void,
  *   onError?: (message: string) => void,
  *   fetchIceServers?: () => Promise<RTCIceServer[]>,
+ *   getUserId?: () => string,
+ *   onRoleChanged?: (role: "speaker"|"spectator", speakerUserIds: Set<string>|null) => void,
  * }} handlers
  */
 export function createCallManager(handlers) {
@@ -50,6 +53,11 @@ export function createCallManager(handlers) {
   let iceServers = FALLBACK_ICE_SERVERS;
   const peers = new Map(); // peerId -> RTCPeerConnection
   const makingOffer = new Set(); // peerIds we're mid-createOffer/setLocalDescription with
+  // Match tables (event day): our role in this call and who may speak -
+  // see server/src/tournament/speakers.js. null speakers = no lock.
+  let role = "speaker";
+  let speakerUserIds = null;
+  const peerUserIds = new Map(); // peerId (socket id) -> account id
   const speakingDetectors = new Map(); // "local" | peerId -> detector state
 
   let localStream = null;
@@ -226,7 +234,13 @@ export function createCallManager(handlers) {
   }
 
   async function makeOfferTo(peerId) {
-    await sendOffer(peerId, createPeerConnection(peerId));
+    const pc = createPeerConnection(peerId);
+    // A spectator sends nothing - ask to receive their audio + video.
+    if (role === "spectator") {
+      pc.addTransceiver("audio", { direction: "recvonly" });
+      pc.addTransceiver("video", { direction: "recvonly" });
+    }
+    await sendOffer(peerId, pc);
   }
 
   // Candidates for an offer we chose to ignore (impolite side of a
@@ -272,7 +286,26 @@ export function createCallManager(handlers) {
   }
 
   function handlePeerJoined(peer) {
+    if (peer.userId) peerUserIds.set(peer.id, peer.userId);
     handlers.onPeerJoined?.(peer);
+  }
+
+  /** Whether a peer's audio/video should play here (match-table lock). */
+  function canPlay(peerId) {
+    return shouldPlayPeerMedia({ peerUserId: peerUserIds.get(peerId), speakerUserIds });
+  }
+
+  // The table's lock changed (a round started or ended). If our own role
+  // flips, rejoin so the server and every peer see the new role.
+  async function handleTableLock({ speakerUserIds: ids }) {
+    if (!inCall) return;
+    speakerUserIds = ids ? new Set(ids) : null;
+    const nextRole = !speakerUserIds || speakerUserIds.has(handlers.getUserId?.()) ? "speaker" : "spectator";
+    handlers.onRoleChanged?.(nextRole, speakerUserIds);
+    if (nextRole !== role) {
+      leave();
+      await join();
+    }
   }
 
   function handlePeerLeft({ id }) {
@@ -313,6 +346,7 @@ export function createCallManager(handlers) {
   socket.on("call-peer-mic-unmuted", handlePeerMicUnmuted);
   socket.on("call-peer-deafened", handlePeerDeafened);
   socket.on("call-peer-undeafened", handlePeerUndeafened);
+  socket.on("table-lock", handleTableLock);
 
   function emitAck(event, payload) {
     return new Promise((resolve) => socket.emit(event, payload, resolve));
@@ -326,13 +360,6 @@ export function createCallManager(handlers) {
   async function join() {
     if (inCall) return { ok: true };
 
-    try {
-      localStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints() });
-    } catch {
-      handlers.onError?.("Couldn't access your microphone - check the browser's permission prompt.");
-      return { ok: false, reason: "media-denied" };
-    }
-
     // STUN/TURN list from the server (TURN credentials are short-lived,
     // so fetched per call). Any failure keeps the STUN-only fallback.
     try {
@@ -342,28 +369,44 @@ export function createCallManager(handlers) {
       iceServers = FALLBACK_ICE_SERVERS;
     }
 
+    // Ask the server first: at a match table it decides whether we speak
+    // or only watch - a spectator never opens the mic at all.
     const ack = await emitAck("join-call", {});
     if (!ack?.ok) {
-      stopLocalStream();
       handlers.onError?.(callErrorMessage(ack?.reason));
       return ack || { ok: false, reason: "unknown" };
     }
+    role = ack.role === "spectator" ? "spectator" : "speaker";
+    speakerUserIds = ack.speakerUserIds ? new Set(ack.speakerUserIds) : null;
+
+    if (role === "speaker") {
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints() });
+      } catch {
+        socket.emit("leave-call");
+        handlers.onError?.("Couldn't access your microphone - check the browser's permission prompt.");
+        return { ok: false, reason: "media-denied" };
+      }
+    } else {
+      localStream = new MediaStream();
+    }
 
     inCall = true;
+    handlers.onRoleChanged?.(role, speakerUserIds);
     handlers.onLocalStream?.(localStream);
     attachSpeakingDetector("local", localStream);
 
-    // Dial every existing member - see the module comment for why only
-    // the joiner ever creates offers.
+    // Dial every existing member - the joiner offers (see negotiation.js
+    // for when two offers cross anyway).
     for (const peer of ack.peers) {
-      handlers.onPeerJoined?.(peer);
+      handlePeerJoined(peer);
       if (peer.videoOn) handlers.onPeerVideoChanged?.(peer.id, true);
       if (peer.micMuted) handlers.onPeerMicChanged?.(peer.id, true);
       if (peer.deafened) handlers.onPeerDeafenChanged?.(peer.id, true);
       await makeOfferTo(peer.id);
     }
 
-    return { ok: true };
+    return { ok: true, role };
   }
 
   function leave() {
@@ -377,6 +420,9 @@ export function createCallManager(handlers) {
       audioContext = null;
     }
     inCall = false;
+    role = "speaker";
+    speakerUserIds = null;
+    peerUserIds.clear();
     videoOn = false;
     micMuted = false;
     deafened = false;
@@ -568,6 +614,7 @@ export function createCallManager(handlers) {
     socket.off("call-peer-mic-unmuted", handlePeerMicUnmuted);
     socket.off("call-peer-deafened", handlePeerDeafened);
     socket.off("call-peer-undeafened", handlePeerUndeafened);
+    socket.off("table-lock", handleTableLock);
   }
 
   return {
@@ -586,6 +633,8 @@ export function createCallManager(handlers) {
     isVideoOn: () => videoOn,
     isMicMuted: () => micMuted,
     isDeafened: () => deafened,
+    getRole: () => role,
+    canPlay,
   };
 }
 
@@ -599,6 +648,10 @@ function callErrorMessage(reason) {
       return "Walk up to a table first.";
     case "not-in-call":
       return "Join the call before turning on your camera.";
+    case "spectators-full":
+      return "This match already has the most spectators it can take (8).";
+    case "spectator":
+      return "This table is in a match - only the players and staff can use mic and camera.";
     default:
       return "Something went wrong with the call - try again.";
   }

@@ -20,6 +20,9 @@ export function initCallUI() {
   // The tile the player clicked to keep on the big screen, if any - see
   // refreshBig() and ui/bigScreen.js's pickBigTile().
   let pinnedId = null;
+  // Match tables: peers whose media we don't play (see webrtc/speakers.js).
+  const blockedPeers = new Set();
+  let spectating = false;
   const panel = el("call-panel");
   const joinBtn = el("call-join-btn");
   const muteBtn = el("call-mute-btn");
@@ -214,7 +217,7 @@ export function initCallUI() {
       // A freshly-created remote tile should start muted if we're
       // currently deafened ourselves - otherwise a peer who joins after
       // we deafened would briefly play audio before the next toggle.
-      if (peerId !== "local" && deafenedLocally) {
+      if (peerId !== "local" && (deafenedLocally || blockedPeers.has(peerId))) {
         tile.querySelector("video").muted = true;
       }
     }
@@ -225,6 +228,36 @@ export function initCallUI() {
     setHandlers(next) {
       handlers = { ...handlers, ...next };
     },
+
+    /**
+     * Match-table lock: a peer who isn't a player/staff there is neither
+     * heard nor shown here, whatever their client sends.
+     */
+    setPeerAllowed(peerId, allowed) {
+      if (allowed) blockedPeers.delete(peerId);
+      else blockedPeers.add(peerId);
+      const tile = tilesEl.querySelector(`[data-peer="${peerId}"]`);
+      if (!tile) return;
+      tile.classList.toggle("blocked", !allowed);
+      tile.querySelector("video").muted = deafenedLocally || !allowed;
+    },
+
+    /** Watching a match: no mic/camera controls, just a note saying so. */
+    setSpectator(on) {
+      spectating = on;
+      panel.classList.toggle("spectating", on);
+      if (on) {
+        hintEl.textContent = strings.watchingMatch;
+        hintEl.hidden = false;
+      } else if (hintEl.textContent === strings.watchingMatch) {
+        hintEl.hidden = true;
+      }
+    },
+
+    isSpectating: () => spectating,
+
+    /** Remote peers with a tile right now. */
+    peerIds: () => [...tilesEl.querySelectorAll(".call-tile:not(.is-local)")].map((t) => t.dataset.peer),
 
     /** Keeps `peerId`'s tile on the big screen (null = back to automatic). */
     setPinned(peerId) {
@@ -284,8 +317,8 @@ export function initCallUI() {
       // The actual "stop hearing others" effect: mute every remote
       // tile's <video> element locally (your own tile is always muted
       // already, to avoid echoing your mic back to you).
-      tilesEl.querySelectorAll(".call-tile:not(.is-local) video").forEach((v) => {
-        v.muted = deafened;
+      tilesEl.querySelectorAll(".call-tile:not(.is-local)").forEach((t) => {
+        t.querySelector("video").muted = deafened || blockedPeers.has(t.dataset.peer);
       });
     },
 
@@ -326,7 +359,7 @@ export function initCallUI() {
       videoEl.srcObject = stream || null;
       // The same <video> element carries audio too, whether or not it
       // currently has a video track - no separate <audio> element needed.
-      if (id !== "local") videoEl.muted = deafenedLocally;
+      if (id !== "local") videoEl.muted = deafenedLocally || blockedPeers.has(id);
       tile.classList.toggle("has-video", !!stream?.getVideoTracks().length);
       refreshBig();
     },
@@ -369,7 +402,9 @@ export function initCallUI() {
       hintEl.hidden = false;
       window.clearTimeout(hintTimer);
       hintTimer = window.setTimeout(() => {
-        hintEl.hidden = true;
+        // Back to the "you're watching" note if that's what was showing.
+        hintEl.textContent = spectating ? strings.watchingMatch : "";
+        hintEl.hidden = !spectating;
       }, 5000);
     },
 
@@ -380,6 +415,8 @@ export function initCallUI() {
     },
 
     reset() {
+      blockedPeers.clear();
+      api.setSpectator(false);
       api.clearTiles();
       api.showJoined(false);
       hintEl.hidden = true;

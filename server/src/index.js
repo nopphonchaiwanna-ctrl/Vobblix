@@ -484,10 +484,11 @@ io.on("connection", (socket) => {
     // which avoids two peers racing to offer each other at once).
     const peers = listPlayers(meta.roomId)
       .filter((p) => p.tableId === meta.tableId && p.inCall && p.id !== socket.id)
-      .map((p) => ({ id: p.id, name: p.name, videoOn: p.videoOn, micMuted: p.micMuted, deafened: p.deafened }));
+      .map((p) => ({ id: p.id, userId: p.userId, name: p.name, videoOn: p.videoOn, micMuted: p.micMuted, deafened: p.deafened }));
 
     socket.to(tableRoomName(meta.roomId, meta.tableId)).emit("call-peer-joined", {
       id: socket.id,
+      userId: socket.user.userId,
       name: player.name,
     });
 
