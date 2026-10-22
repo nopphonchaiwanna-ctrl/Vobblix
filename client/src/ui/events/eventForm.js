@@ -45,6 +45,13 @@ export function eventFormHtml({ values = {}, submitLabel, mode = "full", cancelL
            <select id="events-form-regulation">${Object.entries(REGULATION_LABELS).map(([v, l]) => opt(v, l, values.vanguardRegulation ?? "d_standard")).join("")}</select>
          </label>
        </div>
+       <label id="events-form-deck-field">Deck submission (JP D-Standard only)
+         <select id="events-form-deck-submission">
+           ${opt("off", "Off - no decks", values.deckSubmission ?? "off")}
+           ${opt("optional", "Optional - players may submit a Decklog deck", values.deckSubmission)}
+           ${opt("required", "Required before check-in", values.deckSubmission)}
+         </select>
+       </label>
        <label>How players get in
          <select id="events-form-mode">
            ${opt("first_come", "First come, first served (then a waitlist)", values.registrationMode ?? "first_come")}
@@ -93,14 +100,20 @@ export function bindEventForm(root, onSubmit, onError) {
   const $ = (id) => root.querySelector(`#${id}`);
   const format = $("events-form-format");
   const gameSelect = $("events-form-game");
+  // Mirrors the server's takesDecks(): only Vanguard JP D-Standard events take decks.
+  const takesDecks = () =>
+    gameSelect.value === "vanguard" && $("events-form-region").value === "jp" && $("events-form-regulation").value === "d_standard";
   if (format) {
     const sync = () => {
       $("events-form-cutsize-field").hidden = format.value !== "swiss_cut";
       $("events-form-vanguard").hidden = gameSelect.value !== "vanguard";
+      $("events-form-deck-field").hidden = !takesDecks();
     };
     sync();
     format.addEventListener("change", sync);
     gameSelect.addEventListener("change", sync);
+    $("events-form-region").addEventListener("change", sync);
+    $("events-form-regulation").addEventListener("change", sync);
   }
   $("events-form").addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -120,6 +133,7 @@ export function bindEventForm(root, onSubmit, onError) {
         registrationMode: $("events-form-mode").value,
         vanguardRegion: game === "vanguard" ? $("events-form-region").value : null,
         vanguardRegulation: game === "vanguard" ? $("events-form-regulation").value : null,
+        deckSubmission: takesDecks() ? $("events-form-deck-submission").value : "off",
       });
     }
     try {

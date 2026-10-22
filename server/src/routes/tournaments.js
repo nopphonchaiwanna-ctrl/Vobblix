@@ -13,6 +13,7 @@ import { startingRoster } from "../tournament/entry.js";
 import { assignTables } from "../tournament/tables.js";
 import { parseStartsAt, registrationOpen, upcomingWindow } from "../tournament/schedule.js";
 import { buildHistoryEntry } from "../tournament/history.js";
+import { normalizeDeckSubmission } from "../tournament/deckStats.js";
 import { refreshEventTables } from "../eventTables.js";
 import { createEventNotifier } from "../eventNotify.js";
 import { eventRole } from "../eventAccess.js";
@@ -69,7 +70,7 @@ function isCompeting(p) {
  * Validates an event's settings from a request body - shared by create
  * and edit so the two can't drift apart. Returns { error } or { fields }.
  */
-function parseEventSettings(body) {
+function parseEventSettings(body, currentDeckSubmission = "off") {
   const name = (body?.name || "").trim().slice(0, 80);
   const game = body?.game;
   const format = body?.format === "swiss_cut" ? "swiss_cut" : "swiss_only";
@@ -98,7 +99,10 @@ function parseEventSettings(body) {
   }
   if (roundTimeLimitMinutes === undefined) return { error: ROUND_TIME_LIMIT_ERROR };
   return {
-    fields: { name, game, format, configuredCutSize, drawRule, maxPlayers, roundTimeLimitMinutes, registrationMode, vanguardRegion, vanguardRegulation },
+    fields: {
+      name, game, format, configuredCutSize, drawRule, maxPlayers, roundTimeLimitMinutes, registrationMode, vanguardRegion, vanguardRegulation,
+      deckSubmission: normalizeDeckSubmission({ game, vanguardRegion, vanguardRegulation }, body?.deckSubmission, currentDeckSubmission),
+    },
   };
 }
 
@@ -234,6 +238,7 @@ function publicEvent(event) {
     registrationMode: event.registration_mode,
     vanguardRegion: event.vanguard_region,
     vanguardRegulation: event.vanguard_regulation,
+    deckSubmission: event.deck_submission,
     lotteryDrawnAt: event.lottery_drawn_at,
     checkInOpenedAt: event.check_in_opened_at,
     startsAt: event.starts_at ? new Date(event.starts_at).toISOString() : null,
@@ -464,7 +469,7 @@ export function createTournamentsRouter(io) {
       if (!event) return;
 
       if (event.status === "registration") {
-        const parsed = parseEventSettings(req.body);
+        const parsed = parseEventSettings(req.body, event.deck_submission);
         if (parsed.error) return res.status(400).json({ error: parsed.error });
         const { error: startsAtError, startsAt } = parseEditStartsAt(req.body, event);
         if (startsAtError) return res.status(400).json({ error: startsAtError });

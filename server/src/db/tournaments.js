@@ -20,16 +20,17 @@ export async function createEvent({
   vanguardRegion = null,
   vanguardRegulation = null,
   startsAt = null,
+  deckSubmission = "off",
   createdBy,
 }) {
   const { rows } = await pool.query(
     `INSERT INTO tournament_events
        (shop_id, name, game, format, configured_cut_size, draw_rule, max_players, round_time_limit_minutes,
-        registration_mode, vanguard_region, vanguard_regulation, starts_at, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        registration_mode, vanguard_region, vanguard_regulation, starts_at, created_by, deck_submission)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
      RETURNING *`,
     [shopId, name, game, format, configuredCutSize ?? null, drawRule, maxPlayers ?? null, roundTimeLimitMinutes ?? null,
-      registrationMode, vanguardRegion, vanguardRegulation, startsAt, createdBy]
+      registrationMode, vanguardRegion, vanguardRegulation, startsAt, createdBy, deckSubmission]
   );
   return rows[0];
 }
@@ -111,18 +112,18 @@ export async function cancelEvent(eventId) {
  */
 export async function updateEventSettings(
   eventId,
-  { name, game, format, configuredCutSize, drawRule, maxPlayers, roundTimeLimitMinutes, registrationMode, vanguardRegion, vanguardRegulation, startsAt = null }
+  { name, game, format, configuredCutSize, drawRule, maxPlayers, roundTimeLimitMinutes, registrationMode, vanguardRegion, vanguardRegulation, startsAt = null, deckSubmission = "off" }
 ) {
   const { rows } = await pool.query(
     `UPDATE tournament_events
      SET name = $2, game = $3, format = $4, configured_cut_size = $5, draw_rule = $6,
          max_players = $7, round_time_limit_minutes = $8,
          registration_mode = $9, vanguard_region = $10, vanguard_regulation = $11,
-         starts_at = COALESCE($12, starts_at)
+         starts_at = COALESCE($12, starts_at), deck_submission = $13
      WHERE id = $1 AND status = 'registration'
      RETURNING *`,
     [eventId, name, game, format, configuredCutSize ?? null, drawRule, maxPlayers, roundTimeLimitMinutes ?? null,
-      registrationMode, vanguardRegion, vanguardRegulation, startsAt]
+      registrationMode, vanguardRegion, vanguardRegulation, startsAt, deckSubmission]
   );
   return rows[0] || null;
 }
