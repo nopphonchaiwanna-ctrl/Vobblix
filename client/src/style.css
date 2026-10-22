@@ -3466,3 +3466,99 @@ dialog.ev-deck-dialog input {
   margin: 12px 0 6px;
   font-size: 14px;
 }
+
+/* ---------- G3 stats table (ui/deckStatsTable.js) ---------- */
+
+.deck-stats-scroll {
+  overflow-x: auto;
+}
+
+table.deck-stats {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+table.deck-stats th,
+table.deck-stats td {
+  padding: 8px 10px;
+  text-align: right;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+table.deck-stats th:first-child,
+table.deck-stats td:first-child {
+  text-align: left;
+  white-space: normal;
+}
+
+table.deck-stats th {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.deck-stats-g3 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 180px;
+}
+
+.deck-stats-g3 img,
+.deck-stats-noart {
+  width: 36px;
+  height: 52px;
+  flex-shrink: 0;
+  object-fit: cover;
+  border-radius: 3px;
+  background: var(--border);
+}
+
+.deck-stats-range {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.deck-stats-range button[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.deck-stats-range input[type="date"] {
+  display: block;
+  margin-top: 4px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.deck-stats-body[aria-busy="true"] {
+  opacity: 0.6;
+}
+
+.history-deck .ev-g3 img {
+  width: 24px;
+  height: 34px;
+}
+
+.deck-stats-range button {
+  width: auto;
+}
+
+@media (max-width: 480px) {
+  /* The opponent's G3 drops to its own line under the name. */
+  .history-match:has(.history-deck) {
+    grid-template-columns: minmax(80px, auto) 1fr auto;
+  }
+
+  .history-deck {
+    grid-column: 2 / -1;
+    order: 1;
+  }
+}

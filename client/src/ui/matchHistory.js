@@ -11,6 +11,7 @@ import { showPanelScreen } from "./screens.js";
 import { GAME_LABELS, REGION_LABELS, REGULATION_LABELS, PENALTY_LABELS } from "./events/common.js";
 import { formatStartsAt } from "./events/listing.js";
 import { placementText, recordText, resultText } from "./events/history.js";
+import { g3Html } from "./events/deckDialog.js";
 
 const el = (id) => document.getElementById(id);
 
@@ -31,7 +32,7 @@ function eventHtml(e) {
     GAME_LABELS[e.game] || e.game,
     e.vanguardRegion ? `${REGION_LABELS[e.vanguardRegion]} ${REGULATION_LABELS[e.vanguardRegulation] || ""}`.trim() : null,
   ].filter(Boolean).join(" · ");
-  // Part 4 fills opponentDeck; until then the column doesn't exist.
+  // The opponent's G3 ride line (part 4) - only in events that collected decks.
   const showDeck = e.matches.some((m) => m.opponentDeck);
   const matches = e.matches
     .map(
@@ -39,7 +40,7 @@ function eventHtml(e) {
         <li class="history-match">
           <span class="history-round">${escapeHtml(m.roundLabel)}</span>
           <span class="history-opponent">${escapeHtml(m.opponentName ?? "")}</span>
-          ${showDeck ? `<span class="history-deck">${escapeHtml(m.opponentDeck ?? "")}</span>` : ""}
+          ${showDeck ? `<span class="history-deck">${m.opponentDeck ? g3Html(m.opponentDeck.g3) : `<span class="muted">No deck</span>`}</span>` : ""}
           <span class="status-pill history-result history-result-${escapeHtml(m.result || "none")}">${escapeHtml(resultText(m.result))}</span>
           ${penaltiesHtml(m.penalties)}
         </li>`

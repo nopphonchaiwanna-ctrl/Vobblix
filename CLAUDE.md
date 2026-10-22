@@ -107,17 +107,20 @@ for the Render / Cloudflare Pages / Neon `production` branch accounts),
 6. Thai/English i18n.
 1. Neon is at migration 018 - **019 (users.avatar_config), 020
    (event day: entry modes, check-in, tables, judges, penalties, push),
-   021 (events.starts_at) and 022 (event_penalties player_id index) must
-   run before the new server** (Render runs `npm run migrate` on
+   021 (events.starts_at), 022 (event_penalties player_id index) and
+   023 (event decks: deck_submission, event_decks, event_deck_cards)
+   must run before the new server** (Render runs `npm run migrate` on
    start). Web Push needs `VAPID_*` env vars (docs/deploy.md 6.5).
    Event work is split in 4 parts: 1 event day = done; 2 lobby events
    list + search + start times + all-online match tables = done; 3
    player match history (`GET /events/history`, own history only,
-   `/history` screen) = done - each match carries `opponentDeck: null`
-   for part 4 to fill with the opponent's G3 ride line; next
-   4 deck submission + Vanguard deck stats by G3 ride line (per event:
-   shop owner; across events: admin only). Part 4 must not depend on
-   Decklog for TH-format Vanguard events - there's no TH Decklog.
+   `/history` screen) = done; 4 deck submission + G3 stats = done -
+   JP D-Standard only (TH has no Decklog and KK card fight only shares
+   images, Premium has no ride deck), organizer picks off/optional/
+   required, deck = snapshot of a My-deck/Decklog deck, G3 group read
+   from the Ride Deck at query time (`tournament/deckStats.js`), stats
+   per event for the shop owner and across events (Bangkok date range)
+   for admin, opponent's G3 in match history.
    (017: users.deleted_at, deletion-request
    processing columns, the `default` room row; 018: owned shops get
    scene_type 'owned' so 111/222 draw their chosen layout/theme).

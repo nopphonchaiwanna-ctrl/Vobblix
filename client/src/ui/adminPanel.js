@@ -26,6 +26,7 @@ import { fileToResizedDataUrl } from "./imageUpload.js";
 import { icon } from "./icons.js";
 import { showToast } from "./toast.js";
 import { confirmDialog } from "./confirmDialog.js";
+import { initAdminDeckStats } from "./deckStatsTable.js";
 
 function el(id) {
   return document.getElementById(id);
@@ -37,6 +38,7 @@ export function initAdminPanel({ getToken, onBack }) {
   const applicationsEl = el("admin-applications-list");
   const shopsEl = el("admin-shops-list");
   const dashboardNav = initDashboardNav(screen.querySelector(".dashboard-shell"), { defaultSection: "applications" });
+  const deckStats = initAdminDeckStats({ container: el("admin-deck-stats"), getToken });
 
   // ---------- Shop-detail page (a closer look before approve/reject) ----------
   // A real screen swap inside this section (list <-> detail), not a
@@ -629,7 +631,7 @@ export function initAdminPanel({ getToken, onBack }) {
       screen.hidden = false;
       dashboardNav.setActive("applications");
       historyMode = "list";
-      await Promise.all([renderApplications(), renderShops(), renderCentralShops(), renderHistory(), renderDeletions()]);
+      await Promise.all([renderApplications(), renderShops(), renderCentralShops(), renderHistory(), renderDeletions(), deckStats.open()]);
     },
   };
 }

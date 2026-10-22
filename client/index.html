@@ -767,6 +767,23 @@
   <line x1="17" x2="22" y1="8" y2="13" />
   <line x1="22" x2="17" y1="8" y2="13" />
 </svg></span>Account deletions</button>
+            <button type="button" class="dashboard-nav-item" data-dashboard-section="deck-stats"><span class="icon"><svg
+  class="lucide lucide-chart-column"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M3 3v16a2 2 0 0 0 2 2h16" />
+  <path d="M18 17V9" />
+  <path d="M13 17V5" />
+  <path d="M8 17v-3" />
+</svg></span>Deck stats</button>
           </nav>
           <button type="button" class="back-btn" id="admin-panel-back"><span class="icon"><svg
   class="lucide lucide-arrow-left"
@@ -872,6 +889,11 @@
           notifications deleted, their shop suspended and open orders cancelled. Past event results and order
           threads stay, shown as "Deleted user". This can't be undone.</p>
         <div id="admin-deletions-list" class="list"></div>
+        </div>
+        <div data-dashboard-panel="deck-stats" hidden>
+        <h2 class="panel-subhead">Deck stats</h2>
+        <p class="hint">Grade 3 ride lines across every finished JP D-Standard event that collected decks, by the day each event finished (Thailand time).</p>
+        <div id="admin-deck-stats"></div>
         </div>
         </div>
       </div>

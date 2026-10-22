@@ -111,6 +111,8 @@ export function renderStaffView(view, { userId, role, tab }) {
     ...(["registration", "check_in"].includes(event.status) ? [["check_in", "Check-in"], ["waitlist", "Waitlist"]] : []),
     ...(running ? [["pairings", "Pairings"], ["calls", `Judge calls${openCalls ? ` (${openCalls})` : ""}`], ["standings", "Standings"]] : []),
     ...(event.status === "completed" ? [["final", "Final standings"]] : []),
+    // The shop owner's G3 table (deck-stats design §7.3) - loaded by eventsPanel.js.
+    ...(event.status === "completed" && organizer && event.deckSubmission !== "off" ? [["deck_stats", "Deck stats"]] : []),
     ["penalties", `Penalties${pendingPenalties ? ` (${pendingPenalties})` : ""}`],
     ...(organizer ? [["judges", "Judges"]] : []),
   ];
@@ -124,6 +126,7 @@ export function renderStaffView(view, { userId, role, tab }) {
     final: () => finalStandingsHtml(view),
     penalties: () => penaltiesTab(view, organizer),
     judges: () => judgesTab(view),
+    deck_stats: () => `<div data-deck-stats><p class="hint">Loading…</p></div>`,
   }[activeTab]();
 
   const bar = actions

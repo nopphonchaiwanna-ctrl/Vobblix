@@ -32,6 +32,7 @@ import {
   issuePenalty,
   decidePenalty,
   withdrawEventDeck,
+  getEventDeckStats,
 } from "../net/api.js";
 import { getSocket } from "../net/socket.js";
 import { askEventPushConsent } from "../net/push.js";
@@ -44,6 +45,7 @@ import { renderPlayerView } from "./events/playerView.js";
 import { renderStaffView } from "./events/organizerView.js";
 import { eventFormHtml, bindEventForm } from "./events/eventForm.js";
 import { openDeckDialog, openPlayerDeckDialog } from "./events/deckDialog.js";
+import { deckStatsTableHtml } from "./deckStatsTable.js";
 import { GAME_LABELS, STATUS_LABELS, REGION_LABELS, REGULATION_LABELS, formatDuration } from "./events/common.js";
 
 const REFRESH_MS = 10_000;
@@ -65,6 +67,8 @@ export function initEventsPanel({ getToken, getUserId, onBack, goToMatch, watchT
   let eventId = null;
   let view = null; // last GET /events/:id
   let tab = null;
+  // A finished event's G3 table never changes - fetched once per event.
+  const deckStatsCache = new Map();
   const judgeCallCooldown = new Map(); // matchId -> ms timestamp
   const askedConsent = new Set(); // eventIds we already prompted this session
 
@@ -192,10 +196,24 @@ export function initEventsPanel({ getToken, getUserId, onBack, goToMatch, watchT
       (staff
         ? renderStaffView(view, { userId: getUserId(), role: view.myRole, tab })
         : renderPlayerView(view, { userId: getUserId(), tab, judgeCooldownUntil: cooldownForMyMatch() }));
+    fillDeckStats();
     startRoundTimer();
     startRefresh();
     // A judge is asked about alerts the first time they open the event.
     if (view.myRole === "judge" && view.myPushConsent === null) maybeAskConsent();
+  }
+
+  async function fillDeckStats() {
+    const slot = bodyEl.querySelector("[data-deck-stats]");
+    if (!slot) return;
+    const id = eventId;
+    try {
+      if (!deckStatsCache.has(id)) deckStatsCache.set(id, (await getEventDeckStats(getToken(), id)).stats);
+      const live = bodyEl.querySelector("[data-deck-stats]");
+      if (live && id === eventId) live.innerHTML = deckStatsTableHtml(deckStatsCache.get(id), { mode: "event" });
+    } catch (err) {
+      showError(err.message);
+    }
   }
 
   function cooldownForMyMatch() {
