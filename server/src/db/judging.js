@@ -43,21 +43,35 @@ export async function lastCallBy(matchId, userId) {
 
 /**
  * Records a call unless this user called on this match within
- * `cooldownMs` (checked and inserted in one statement, so two quick
- * clicks can't both get through). null = still cooling down.
+ * `cooldownMs`. null = still cooling down. A single INSERT ... WHERE NOT
+ * EXISTS isn't enough on its own: under READ COMMITTED two concurrent
+ * statements can't see each other's uncommitted row, so both insert.
+ * A transaction-scoped advisory lock per (match, caller) makes the
+ * second click wait for the first to commit, then see its row.
  */
 export async function createJudgeCall(eventId, matchId, userId, cooldownMs) {
-  const { rows } = await pool.query(
-    `INSERT INTO judge_calls (event_id, match_id, called_by)
-     SELECT $1, $2, $3
-     WHERE NOT EXISTS (
-       SELECT 1 FROM judge_calls
-       WHERE match_id = $2 AND called_by = $3 AND created_at > now() - ($4::float8 * interval '1 millisecond')
-     )
-     RETURNING *`,
-    [eventId, matchId, userId, cooldownMs]
-  );
-  return rows[0] || null;
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [`judge-call:${matchId}:${userId}`]);
+    const { rows } = await client.query(
+      `INSERT INTO judge_calls (event_id, match_id, called_by)
+       SELECT $1, $2, $3
+       WHERE NOT EXISTS (
+         SELECT 1 FROM judge_calls
+         WHERE match_id = $2 AND called_by = $3 AND created_at > now() - ($4::float8 * interval '1 millisecond')
+       )
+       RETURNING *`,
+      [eventId, matchId, userId, cooldownMs]
+    );
+    await client.query("COMMIT");
+    return rows[0] || null;
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 export async function getJudgeCall(callId) {

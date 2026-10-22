@@ -2,7 +2,7 @@
 import { describe, test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import {
-  SKIP_REASON, resetDatabase, startServer, apiFor, createAndLogin, createPublishedShop, openCheckInAndApproveAll, FUTURE_START,
+  SKIP_REASON, resetDatabase, startServer, apiFor, createAndLogin, createPublishedShop, openCheckInAndApproveAll, FUTURE_START, withDb, testDatabaseUrl,
 } from "./helpers.js";
 
 describe("judging", { skip: SKIP_REASON }, () => {
@@ -226,5 +226,30 @@ describe("judging", { skip: SKIP_REASON }, () => {
       api.post(`/events/${event.id}/matches/${match.id}/call-judge`, p1.token),
     ]);
     assert.deepEqual([a.status, b.status].sort(), [201, 429]);
+  });
+
+  // The cooldown check and the insert race under READ COMMITTED unless
+  // they're serialized - a burst makes the race show up every time.
+  test("a burst of judge calls on one match records exactly one", async () => {
+    const { event, match, p1 } = await runningEvent();
+    const results = await Promise.all(
+      Array.from({ length: 8 }, () => api.post(`/events/${event.id}/matches/${match.id}/call-judge`, p1.token))
+    );
+    assert.equal(results.filter((r) => r.status === 201).length, 1, JSON.stringify(results.map((r) => r.status)));
+    const rows = await withDb((db) => db.query("SELECT count(*)::int AS n FROM judge_calls WHERE match_id = $1", [match.id]));
+    assert.equal(rows.rows[0].n, 1);
+  });
+
+  test("createJudgeCall: concurrent calls on one match insert exactly one row", async () => {
+    // The pool reads DATABASE_URL once, on import: point it at the test DB just for that.
+    const realUrl = process.env.DATABASE_URL;
+    process.env.DATABASE_URL = testDatabaseUrl();
+    const judgingDb = await import("../../src/db/judging.js");
+    if (realUrl === undefined) delete process.env.DATABASE_URL;
+    else process.env.DATABASE_URL = realUrl;
+    const { event, match, p1 } = await runningEvent();
+    const calls = await Promise.all(Array.from({ length: 20 }, () => judgingDb.createJudgeCall(event.id, match.id, p1.id, 60_000)));
+    assert.equal(calls.filter(Boolean).length, 1);
+    await (await import("../../src/db/pool.js")).pool.end();
   });
 });
