@@ -51,18 +51,23 @@ export function initAdminDeckStats({ container, getToken }) {
   const errorEl = container.querySelector(".error");
   const body = container.querySelector(".deck-stats-body");
   const presets = [...container.querySelectorAll("[data-preset]")];
+  let requestSeq = 0; // a slow answer for an older range never overwrites a newer one
+  let opened = false;
 
   async function load() {
+    const seq = ++requestSeq;
     errorEl.hidden = true;
     body.setAttribute("aria-busy", "true");
     try {
       const { stats, eventCount } = await getAdminDeckStats(getToken(), { from: from.value, to: to.value });
+      if (seq !== requestSeq) return;
       body.innerHTML = `<p class="hint">Across ${eventCount} event${eventCount === 1 ? "" : "s"} · ${stats.withDeck} deck${stats.withDeck === 1 ? "" : "s"}</p>${deckStatsTableHtml(stats, { mode: "all" })}`;
     } catch (err) {
+      if (seq !== requestSeq) return;
       errorEl.textContent = err.message;
       errorEl.hidden = false;
     } finally {
-      body.removeAttribute("aria-busy");
+      if (seq === requestSeq) body.removeAttribute("aria-busy");
     }
   }
   function choose(name) {
@@ -78,5 +83,12 @@ export function initAdminDeckStats({ container, getToken }) {
     load();
   });
 
-  return { open: () => choose("30d") };
+  // First visit loads the last 30 days; later visits keep the admin's range.
+  return {
+    open() {
+      if (opened) return;
+      opened = true;
+      choose("30d");
+    },
+  };
 }

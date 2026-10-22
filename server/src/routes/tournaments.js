@@ -475,7 +475,7 @@ export function createTournamentsRouter(io) {
     try {
       const target = await loadDeckTarget(req, res);
       if (!target) return;
-      const deckId = req.body?.deckId || (await importDeckForUser(req.auth.userId, req.body?.code, req.body?.sourceLocale)).id;
+      const deckId = req.body?.deckId || (await importDeckForUser(req.auth.userId, req.body?.code, req.body?.sourceLocale, { requireRideDeck: true })).id;
       const saved = await eventDecks.saveEventDeck(target.event.id, target.player.id, deckId, req.auth.userId);
       if (!saved) return res.status(404).json({ error: "Deck not found." });
       res.json({ myDeck: await eventDeckView(saved) });
@@ -524,8 +524,7 @@ export function createTournamentsRouter(io) {
       const player = await db.getPlayerById(req.params.playerId);
       const deck = player && player.event_id === event.id ? await eventDecks.getEventDeck(player.id) : null;
       if (!deck) return res.status(404).json({ error: "No deck submitted." });
-      const name = (await db.getPlayersForEvent(event.id)).find((p) => p.id === player.id)?.display_name ?? null;
-      res.json({ playerName: name, deck: await eventDeckView(deck) });
+      res.json({ playerName: await db.getPlayerDisplayName(player.id), deck: await eventDeckView(deck) });
     } catch (err) {
       next(err);
     }

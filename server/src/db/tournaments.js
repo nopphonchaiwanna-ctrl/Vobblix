@@ -205,6 +205,14 @@ export async function getPlayerByEventAndUser(eventId, userId) {
   return rows[0] || null;
 }
 
+export async function getPlayerDisplayName(playerId) {
+  const { rows } = await pool.query(
+    "SELECT u.display_name FROM tournament_players tp JOIN users u ON u.id = tp.user_id WHERE tp.id = $1",
+    [playerId]
+  );
+  return rows[0]?.display_name ?? null;
+}
+
 export async function getPlayerById(playerId) {
   const { rows } = await pool.query(`SELECT * FROM tournament_players WHERE id = $1`, [playerId]);
   return rows[0] || null;

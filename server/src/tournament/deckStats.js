@@ -129,3 +129,8 @@ export function bangkokRange(from, to) {
   if (start && end && start >= end) return RANGE_ERROR;
   return { start, end };
 }
+
+/** A D-Standard deck has a Ride Deck - checked before a new Decklog import is saved anywhere. */
+export function hasRideDeck(cards) {
+  return cards.some((c) => c.zone === "ride");
+}

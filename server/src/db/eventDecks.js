@@ -109,7 +109,9 @@ export async function listEventDeckRide(eventIds) {
      FROM event_decks ed
      JOIN event_deck_cards dc ON dc.event_deck_id = ed.id AND dc.zone = 'ride'
      LEFT JOIN cards c ON c.game = 'vanguard' AND c.card_number = dc.card_number
-     WHERE ed.event_id = ANY($1::uuid[])`,
+     WHERE ed.event_id = ANY($1::uuid[])
+     -- g3Group keeps the first printing it sees per name: make that stable.
+     ORDER BY ed.player_id, dc.card_number`,
     [eventIds]
   );
   return rows;

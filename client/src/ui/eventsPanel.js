@@ -323,13 +323,18 @@ export function initEventsPanel({ getToken, getUserId, onBack, goToMatch, watchT
     },
     "approve-check-in": async (btn) => approveEventCheckIn(token(), eventId, btn.dataset.playerId),
     "submit-deck": async () => {
-      if (await openDeckDialog({ getToken, eventId })) showToast("Deck submitted.");
+      const returnFocus = () => bodyEl.querySelector('[data-action="submit-deck"]');
+      if (await openDeckDialog({ getToken, eventId, returnFocus })) showToast("Deck submitted.");
     },
     "withdraw-deck": async () => {
       const ok = await confirmDialog("Your deck won't count toward this event's stats.", { title: "Withdraw your deck?", confirmLabel: "Withdraw" });
       if (ok) await withdrawEventDeck(token(), eventId);
     },
-    "view-deck": async (btn) => openPlayerDeckDialog({ getToken, eventId, playerId: btn.dataset.playerId }),
+    "view-deck": async (btn) => {
+      const { playerId } = btn.dataset;
+      const returnFocus = () => bodyEl.querySelector(`[data-action="view-deck"][data-player-id="${CSS.escape(playerId)}"]`);
+      await openPlayerDeckDialog({ getToken, eventId, playerId, returnFocus });
+    },
     start: async () => {
       const r = await startEvent(token(), eventId);
       tab = "pairings";

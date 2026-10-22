@@ -253,4 +253,22 @@ describe("event decks", { skip: SKIP_REASON }, () => {
     assert.ok(await eventDecks.getEventDeck(playerId), "the submitted deck is untouched");
     await (await import("../../src/db/pool.js")).pool.end();
   });
+
+  test("a dropped player can't submit or withdraw; a waitlisted one can submit", async () => {
+    const field = [];
+    for (let k = 0; k < 5; k++) field.push(await newPlayer());
+    const e = await createEvent({ deckSubmission: "optional", maxPlayers: 4 });
+    for (const p of field) assert.equal((await api.post(`/events/${e.id}/register`, p.token)).status, 201);
+    const waitlisted = field[4];
+    const r = await submit(e, waitlisted, { deckId: await seedDeck(waitlisted.id, { ride: ["DZ-BT01/001"] }) });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    const leaver = field[0];
+    const d = await seedDeck(leaver.id, { ride: ["DZ-BT01/001"] });
+    assert.equal((await submit(e, leaver, { deckId: d })).status, 200);
+    assert.equal((await api.post(`/events/${e.id}/drop`, leaver.token)).status, 200);
+    const again = await submit(e, leaver, { deckId: d });
+    assert.equal(again.status, 404);
+    assert.equal(again.body.error, "You're not registered for this event.");
+    assert.equal((await api.delete(`/events/${e.id}/deck`, leaver.token)).status, 404);
+  });
 });

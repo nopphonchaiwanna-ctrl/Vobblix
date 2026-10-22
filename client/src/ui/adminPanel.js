@@ -39,6 +39,8 @@ export function initAdminPanel({ getToken, onBack }) {
   const shopsEl = el("admin-shops-list");
   const dashboardNav = initDashboardNav(screen.querySelector(".dashboard-shell"), { defaultSection: "applications" });
   const deckStats = initAdminDeckStats({ container: el("admin-deck-stats"), getToken });
+  // A cross-event query - only run once the admin actually opens the section.
+  screen.querySelector('[data-dashboard-section="deck-stats"]').addEventListener("click", () => deckStats.open());
 
   // ---------- Shop-detail page (a closer look before approve/reject) ----------
   // A real screen swap inside this section (list <-> detail), not a
@@ -631,7 +633,7 @@ export function initAdminPanel({ getToken, onBack }) {
       screen.hidden = false;
       dashboardNav.setActive("applications");
       historyMode = "list";
-      await Promise.all([renderApplications(), renderShops(), renderCentralShops(), renderHistory(), renderDeletions(), deckStats.open()]);
+      await Promise.all([renderApplications(), renderShops(), renderCentralShops(), renderHistory(), renderDeletions()]);
     },
   };
 }

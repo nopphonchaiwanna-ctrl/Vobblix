@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { takesDecks, normalizeDeckSubmission, g3Group, computeDeckStats, bangkokRange } from "../../src/tournament/deckStats.js";
+import { takesDecks, normalizeDeckSubmission, g3Group, computeDeckStats, bangkokRange, hasRideDeck } from "../../src/tournament/deckStats.js";
 
 test("takesDecks: only Vanguard JP D-Standard events take decks", () => {
   assert.equal(takesDecks({ game: "vanguard", vanguard_region: "jp", vanguard_regulation: "d_standard" }), true);
@@ -89,4 +89,10 @@ test("bangkokRange: whole Bangkok days, end exclusive; bad input is an error", (
   const late = new Date("2026-10-31T17:30:00Z"); // 01 Nov 00:30 Bangkok
   assert.ok(late >= r.end, "excluded from to=2026-10-31");
   assert.ok(late >= bangkokRange("2026-11-01").start, "included from 2026-11-01");
+});
+
+test("hasRideDeck: a fetched Decklog deck needs at least one ride-zone card", () => {
+  assert.equal(hasRideDeck([{ zone: "main" }, { zone: "ride" }]), true);
+  assert.equal(hasRideDeck([{ zone: "main" }, { zone: "g_deck" }]), false);
+  assert.equal(hasRideDeck([]), false);
 });

@@ -7,10 +7,11 @@ export function formatTHB(cents) {
   return `฿${(cents / 100).toFixed(2)}`;
 }
 
+const HTML_ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
+
+/** Safe in element text and in quoted attributes (title="...", src="..."). */
 export function escapeHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str ?? "";
-  return div.innerHTML;
+  return String(str ?? "").replace(/[&<>"']/g, (c) => HTML_ESCAPES[c]);
 }
 
 export function statusLabel(status) {

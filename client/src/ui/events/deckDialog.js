@@ -14,19 +14,29 @@ const SITE_OPTIONS = [
   ["decklog_en", "English Edition (decklog-en.bushiroad.com)"],
 ];
 
-function openDialog(html) {
+/**
+ * `returnFocus` finds the opener again: the event view re-renders every
+ * 10s, so the button that opened the dialog may be a new element by the
+ * time it closes, and focus would otherwise fall to <body>.
+ */
+function openDialog(html, { returnFocus } = {}) {
   const dialog = document.createElement("dialog");
   dialog.className = "app-dialog ev-deck-dialog";
   dialog.setAttribute("closedby", "any");
   dialog.innerHTML = html;
   document.body.append(dialog);
-  dialog.addEventListener("close", () => dialog.remove());
+  dialog.addEventListener("close", () => {
+    dialog.remove();
+    setTimeout(() => {
+      if (document.activeElement === document.body) returnFocus?.()?.focus();
+    });
+  });
   dialog.showModal();
   return dialog;
 }
 
 /** Resolves true once a deck was submitted, false if the player closed the dialog. */
-export async function openDeckDialog({ getToken, eventId }) {
+export async function openDeckDialog({ getToken, eventId, returnFocus }) {
   let decks = [];
   try {
     decks = (await listDecks(getToken())).decks || [];
@@ -34,7 +44,8 @@ export async function openDeckDialog({ getToken, eventId }) {
     // Still usable with a pasted code.
   }
   const options = decks.map((d) => `<option value="${escapeHtml(d.id)}">${escapeHtml(d.title)}</option>`).join("");
-  const dialog = openDialog(`
+  const dialog = openDialog(
+    `
     <form method="dialog" class="ev-deck-form">
       <h2>Submit your deck</h2>
       <p>Your ride line's grade 3 is read from the deck's Ride Deck. Organizers and judges can see the whole deck; other players can't.</p>
@@ -54,7 +65,9 @@ export async function openDeckDialog({ getToken, eventId }) {
         <button type="button" class="dialog-cancel" data-cancel>Cancel</button>
         <button type="submit" data-submit>Submit deck</button>
       </div>
-    </form>`);
+    </form>`,
+    { returnFocus }
+  );
 
   const form = dialog.querySelector("form");
   const pick = form.elements.deckId;
@@ -108,7 +121,7 @@ export async function openDeckDialog({ getToken, eventId }) {
 }
 
 /** Staff: one player's full submitted deck, grouped by zone. */
-export async function openPlayerDeckDialog({ getToken, eventId, playerId }) {
+export async function openPlayerDeckDialog({ getToken, eventId, playerId, returnFocus }) {
   const { playerName, deck } = await getEventPlayerDeck(getToken(), eventId, playerId);
   const zones = [
     ["ride", "Ride Deck"],
@@ -126,7 +139,9 @@ export async function openPlayerDeckDialog({ getToken, eventId, playerId }) {
       <p class="muted">Decklog ${escapeHtml(deck.decklogCode)}</p>
       <div class="ev-deck-view">${zones}</div>
       <div class="dialog-actions"><button type="submit">Close</button></div>
-    </form>`);
+    </form>`,
+    { returnFocus }
+  );
   markLandscapeTiles(dialog);
 }
 
