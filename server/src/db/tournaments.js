@@ -507,17 +507,32 @@ export async function approveCheckIn(playerId, approvedBy) {
 }
 
 /** Approves every registered, non-dropped, not-yet-approved player among userIds. Returns how many (null = check-in closed). */
-export async function approveCheckInForUsers(eventId, userIds, approvedBy) {
+/**
+ * Approves everyone in `userIds` still waiting. With `requireDeck`,
+ * players who haven't submitted a deck are skipped and named instead.
+ * Returns { approved, skippedNoDeck: [display names] }, or null once
+ * check-in has closed.
+ */
+export async function approveCheckInForUsers(eventId, userIds, approvedBy, { requireDeck = false } = {}) {
   return inEventTx(eventId, async (client, event) => {
     if (event.status !== "check_in") return null;
-    if (userIds.length === 0) return 0;
+    if (userIds.length === 0) return { approved: 0, skippedNoDeck: [] };
+    const waiting = `event_id = $1 AND user_id = ANY($2::uuid[]) AND dropped = false AND checked_in_at IS NULL
+         AND entry_status IN ('entered', 'waitlisted')`;
+    const hasDeck = "EXISTS (SELECT 1 FROM event_decks ed WHERE ed.player_id = tournament_players.id)";
     const { rowCount } = await client.query(
       `UPDATE tournament_players SET checked_in_at = now(), checked_in_by = $3
-       WHERE event_id = $1 AND user_id = ANY($2::uuid[]) AND dropped = false AND checked_in_at IS NULL
-         AND entry_status IN ('entered', 'waitlisted')`,
+       WHERE ${waiting} ${requireDeck ? `AND ${hasDeck}` : ""}`,
       [eventId, userIds, approvedBy]
     );
-    return rowCount;
+    const skipped = requireDeck
+      ? (await client.query(
+          `SELECT u.display_name FROM tournament_players JOIN users u ON u.id = tournament_players.user_id
+           WHERE ${waiting} AND NOT ${hasDeck} ORDER BY u.display_name`,
+          [eventId, userIds]
+        )).rows.map((r) => r.display_name)
+      : [];
+    return { approved: rowCount, skippedNoDeck: skipped };
   });
 }
 

@@ -13,10 +13,15 @@ import { startingRoster } from "../tournament/entry.js";
 import { assignTables } from "../tournament/tables.js";
 import { parseStartsAt, registrationOpen, upcomingWindow } from "../tournament/schedule.js";
 import { buildHistoryEntry } from "../tournament/history.js";
-import { normalizeDeckSubmission } from "../tournament/deckStats.js";
+import { normalizeDeckSubmission, takesDecks, g3Group } from "../tournament/deckStats.js";
+import * as eventDecks from "../db/eventDecks.js";
+import { publicDeckCard } from "./decks.js";
+import { importDeckForUser } from "../services/deckImport.js";
+import { DecklogImportError } from "../services/decklogImport.js";
+import { deckImportLimiter } from "../middleware/rateLimit.js";
 import { refreshEventTables } from "../eventTables.js";
 import { createEventNotifier } from "../eventNotify.js";
-import { eventRole } from "../eventAccess.js";
+import { eventRole, requireEventStaff } from "../eventAccess.js";
 import * as judging from "../db/judging.js";
 import { publicJudgeCall, publicPenalty } from "./judging.js";
 import { pushStore } from "../services/push.js";
@@ -143,6 +148,46 @@ async function requireShopOwnerOrAdmin(req, res, shopId) {
 }
 
 /** Loads the event + does the ownership/role check in one call. */
+async function myDeckFor(playerRow) {
+  const deck = playerRow ? await eventDecks.getEventDeck(playerRow.id) : null;
+  return deck ? eventDeckView(deck) : null;
+}
+
+/** Staff see who has sent a deck and its G3 group; players see none of it. */
+async function withStaffDeckInfo(event, publicPlayers, staff) {
+  if (!staff || !decksOn(event)) return publicPlayers;
+  const ride = eventDecks.rideByPlayer(await eventDecks.listEventDeckRide([event.id]));
+  return publicPlayers.map((p) => ({
+    ...p,
+    deckSubmitted: ride.has(p.id),
+    deckG3: ride.has(p.id) ? g3Group(ride.get(p.id)).key : null,
+  }));
+}
+
+function deckRequired(event) {
+  return decksOn(event) && event.deck_submission === "required";
+}
+
+/** Is this event collecting decks right now (JP D-Standard with submission on)? */
+function decksOn(event) {
+  return takesDecks(event) && event.deck_submission !== "off";
+}
+
+/** A submitted deck as its owner or staff see it: title, code, G3 ride line and every card. */
+async function eventDeckView(eventDeck) {
+  const cards = await eventDecks.getEventDeckCards(eventDeck.id);
+  const ride = cards
+    .filter((c) => c.zone === "ride")
+    .map((c) => ({ cardNumber: c.card_number, name: c.name, grade: c.card_grade, imageUrl: c.image_url, nation: c.card_nation }));
+  return {
+    title: eventDeck.title,
+    decklogCode: eventDeck.decklog_code,
+    sourceLocale: eventDeck.source_locale,
+    g3: g3Group(ride).g3,
+    cards: cards.map(publicDeckCard),
+  };
+}
+
 async function requireEventOwnerOrAdmin(req, res, eventId) {
   const event = await db.getEventById(eventId);
   if (!event) {
@@ -398,6 +443,73 @@ export function createTournamentsRouter(io) {
     }
   });
 
+  // ---------- Decks (deck-stats design §5-§6) ----------
+
+  // A player's deck for this event: one of their My-deck decks
+  // ({ deckId }) or a new Decklog code ({ code, sourceLocale }), which
+  // also lands in My deck. Open until the event starts.
+  // Returns { event, player }, or sends the error and returns null.
+  async function loadDeckTarget(req, res) {
+    const fail = (status, error) => {
+      res.status(status).json({ error });
+      return null;
+    };
+    const event = await db.getEventById(req.params.id);
+    if (!event) return fail(404, "Event not found.");
+    const player = await db.getPlayerByEventAndUser(event.id, req.auth.userId);
+    if (!player || player.dropped) return fail(404, "You're not registered for this event.");
+    if (!decksOn(event)) return fail(409, "This event doesn't take decks.");
+    if (!["registration", "check_in"].includes(event.status)) return fail(409, "Decks can't change once the event has started.");
+    return { event, player };
+  }
+
+  // A new Decklog code costs a Decklog fetch - same rate limit as /decks/import.
+  const limitNewImports = (req, res, next) => (req.body?.deckId ? next() : deckImportLimiter(req, res, next));
+
+  tournamentsRouter.put("/:id/deck", limitNewImports, async (req, res, next) => {
+    try {
+      const target = await loadDeckTarget(req, res);
+      if (!target) return;
+      const deckId = req.body?.deckId || (await importDeckForUser(req.auth.userId, req.body?.code, req.body?.sourceLocale)).id;
+      const saved = await eventDecks.saveEventDeck(target.event.id, target.player.id, deckId, req.auth.userId);
+      if (!saved) return res.status(404).json({ error: "Deck not found." });
+      res.json({ myDeck: await eventDeckView(saved) });
+    } catch (err) {
+      if (err instanceof DecklogImportError || err instanceof eventDecks.RideDeckEmptyError) {
+        return res.status(400).json({ error: err.message });
+      }
+      next(err);
+    }
+  });
+
+  tournamentsRouter.delete("/:id/deck", async (req, res, next) => {
+    try {
+      const target = await loadDeckTarget(req, res);
+      if (!target) return;
+      if (deckRequired(target.event)) return res.status(409).json({ error: "A deck is required for this event." });
+      await eventDecks.deleteEventDeck(target.player.id);
+      res.status(204).end();
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // Staff only: a player's full submitted deck.
+  tournamentsRouter.get("/:id/decks/:playerId", async (req, res, next) => {
+    try {
+      const event = await db.getEventById(req.params.id);
+      if (!event) return res.status(404).json({ error: "Event not found." });
+      if (!(await requireEventStaff(req, res, event))) return;
+      const player = await db.getPlayerById(req.params.playerId);
+      const deck = player && player.event_id === event.id ? await eventDecks.getEventDeck(player.id) : null;
+      if (!deck) return res.status(404).json({ error: "No deck submitted." });
+      const name = (await db.getPlayersForEvent(event.id)).find((p) => p.id === player.id)?.display_name ?? null;
+      res.json({ playerName: name, deck: await eventDeckView(deck) });
+    } catch (err) {
+      next(err);
+    }
+  });
+
   // ---------- Event detail ----------
 
   tournamentsRouter.get("/:id", async (req, res, next) => {
@@ -444,7 +556,9 @@ export function createTournamentsRouter(io) {
             ? await judging.listPenalties(event.id)
             : await ownPenalties(event.id, players.find((p) => p.user_id === req.auth.userId))
         ).map(publicPenalty),
-        players: players.map(publicPlayer),
+        players: await withStaffDeckInfo(event, players.map(publicPlayer), staff),
+        // The viewer's own submitted deck - nobody else's, ever (design §6).
+        ...(decksOn(event) ? { myDeck: await myDeckFor(players.find((p) => p.user_id === req.auth.userId && !p.dropped)) } : {}),
         standings: sorted,
         currentRoundMatches: currentRoundMatches.map(publicMatch),
         currentRoundStartedAt,
@@ -713,6 +827,9 @@ export function createTournamentsRouter(io) {
       const player = await db.getPlayerByEventAndUser(event.id, req.auth.userId);
       if (!player || player.dropped) return res.status(404).json({ error: "You're not registered for this event." });
       if (player.entry_status === "pending_draw") return res.status(409).json({ error: "Wait for the draw." });
+      if (deckRequired(event) && !(await eventDecks.getEventDeck(player.id))) {
+        return res.status(409).json({ error: "Submit your deck before checking in." });
+      }
       res.json({ player: publicPlayer(await db.requestCheckIn(player.id)) });
     } catch (err) {
       next(err);
@@ -726,6 +843,9 @@ export function createTournamentsRouter(io) {
       if (event.status !== "check_in") return res.status(409).json({ error: "Check-in isn't open." });
       const player = await db.getPlayerById(req.body?.playerId);
       if (!player || player.event_id !== event.id) return res.status(404).json({ error: "Player not found in this event." });
+      if (deckRequired(event) && !(await eventDecks.getEventDeck(player.id))) {
+        return res.status(409).json({ error: "This player hasn't submitted a deck." });
+      }
       const approved = await db.approveCheckIn(player.id, req.auth.userId);
       if (!approved) return res.status(409).json({ error: "Check-in is closed, or that player has dropped." });
       res.json({ player: publicPlayer(approved) });
@@ -742,9 +862,9 @@ export function createTournamentsRouter(io) {
       if (event.status !== "check_in") return res.status(409).json({ error: "Check-in isn't open." });
       const shop = await getShopById(event.shop_id);
       const present = [...userIdsInRoom(shop.code)];
-      const approved = await db.approveCheckInForUsers(event.id, present, req.auth.userId);
-      if (approved === null) return res.status(409).json({ error: "Check-in is closed." });
-      res.json({ approved });
+      const result = await db.approveCheckInForUsers(event.id, present, req.auth.userId, { requireDeck: deckRequired(event) });
+      if (result === null) return res.status(409).json({ error: "Check-in is closed." });
+      res.json(result);
     } catch (err) {
       next(err);
     }

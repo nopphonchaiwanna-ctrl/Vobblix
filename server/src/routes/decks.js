@@ -12,12 +12,9 @@ import { Router } from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { deckImportLimiter } from "../middleware/rateLimit.js";
 import * as db from "../db/decks.js";
-import { fetchDecklogDeck, DecklogImportError } from "../services/decklogImport.js";
+import { DecklogImportError } from "../services/decklogImport.js";
+import { importDeckForUser } from "../services/deckImport.js";
 
-// Keep in sync with decklogImport.js's LOCALE_API_BASE and the
-// client's decksPanel.js <select> options - see that file's header
-// comment for what each of these three actually is.
-const VALID_SOURCE_LOCALES = ["decklog_en", "decklog_en_ja", "decklog_jp"];
 
 export const decksRouter = Router();
 
@@ -38,7 +35,7 @@ function publicDeck(deck) {
   };
 }
 
-function publicDeckCard(row) {
+export function publicDeckCard(row) {
   const inCatalog = row.name != null;
   return {
     zone: row.zone,
@@ -83,26 +80,7 @@ decksRouter.get("/:id", async (req, res, next) => {
 decksRouter.post("/import", deckImportLimiter, async (req, res, next) => {
   try {
     const { deckCode, sourceLocale } = req.body || {};
-    if (!deckCode || typeof deckCode !== "string") {
-      return res.status(400).json({ error: "deckCode is required." });
-    }
-    if (!VALID_SOURCE_LOCALES.includes(sourceLocale)) {
-      return res.status(400).json({
-        error: `sourceLocale must be one of ${VALID_SOURCE_LOCALES.join(", ")} - pick whichever Decklog site you got the code from.`,
-      });
-    }
-
-    const imported = await fetchDecklogDeck(deckCode.trim(), sourceLocale);
-
-    const deck = await db.createDeck({
-      userId: req.auth.userId,
-      title: imported.title,
-      memo: imported.memo,
-      sourceLocale,
-      decklogCode: deckCode.trim(),
-      nation: imported.nation,
-      cards: imported.cards,
-    });
+    const deck = await importDeckForUser(req.auth.userId, deckCode, sourceLocale);
 
     const cards = await db.getDeckCards(deck.id);
     const missingCount = cards.filter((c) => c.name == null).length;

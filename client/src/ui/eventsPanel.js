@@ -298,7 +298,8 @@ export function initEventsPanel({ getToken, getUserId, onBack, goToMatch, watchT
     },
     auto_check_in: async () => {
       const r = await autoEventCheckIn(token(), eventId);
-      showToast(`${r.approved} player${r.approved === 1 ? "" : "s"} checked in.`);
+      const skipped = r.skippedNoDeck?.length ? ` · No deck: ${r.skippedNoDeck.join(", ")}` : "";
+      showToast(`${r.approved} player${r.approved === 1 ? "" : "s"} checked in.${skipped}`);
     },
     "approve-check-in": async (btn) => approveEventCheckIn(token(), eventId, btn.dataset.playerId),
     start: async () => {
