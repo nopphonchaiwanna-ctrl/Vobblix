@@ -14,13 +14,23 @@ function checkInTab(view, organizer) {
     .filter((p) => !p.dropped && p.entryStatus !== "pending_draw")
     .sort((a, b) => (a.entryStatus === b.entryStatus ? 0 : a.entryStatus === "entered" ? -1 : 1))
     .map((p) => {
+      // Decks (deck-stats design §8): only present when this event collects them.
+      const decks = "deckSubmitted" in p;
+      const needsDeck = decks && view.event.deckSubmission === "required" && !p.deckSubmitted;
       const approve =
         organizer && view.event.status === "check_in" && !p.checkedInAt
-          ? `<button type="button" class="small${p.checkInRequestedAt ? "" : " secondary"}" data-action="approve-check-in" data-player-id="${p.id}">Approve</button>`
+          ? `<button type="button" class="small${p.checkInRequestedAt ? "" : " secondary"}" data-action="approve-check-in" data-player-id="${p.id}"
+               ${needsDeck ? `disabled title="No deck submitted yet"` : ""}>Approve</button>`
           : "";
+      const deck = !decks
+        ? ""
+        : p.deckSubmitted
+          ? `<button type="button" class="ev-badge deck-ok" data-action="view-deck" data-player-id="${p.id}" title="${escapeHtml(p.deckG3 || "")}">Deck ✓</button>`
+          : `<span class="ev-badge no-deck">No deck</span>`;
       return `<div class="ev-row">
           <span class="ev-names">${escapeHtml(p.displayName)}</span>
           ${inShop.has(p.userId) ? `<span class="ev-badge in-shop">In shop</span>` : ""}
+          ${deck}
           <span class="muted">${playerStatusText(p)}</span>
           <span class="ev-pair-actions">${approve}</span>
         </div>`;

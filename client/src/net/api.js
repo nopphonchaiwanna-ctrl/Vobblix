@@ -342,6 +342,32 @@ export function deleteDeck(token, deckId) {
   return request(`/decks/${deckId}`, { method: "DELETE", token });
 }
 
+// ---------- Event decks + G3 stats (deck-stats design) ----------
+
+/** body: { deckId } or { code, sourceLocale } -> { myDeck } */
+export function submitEventDeck(token, eventId, body) {
+  return request(`/events/${eventId}/deck`, { method: "PUT", token, body: JSON.stringify(body) });
+}
+
+export function withdrawEventDeck(token, eventId) {
+  return request(`/events/${eventId}/deck`, { method: "DELETE", token });
+}
+
+/** Staff only: { playerName, deck } */
+export function getEventPlayerDeck(token, eventId, playerId) {
+  return request(`/events/${eventId}/decks/${playerId}`, { token });
+}
+
+export function getEventDeckStats(token, eventId) {
+  return request(`/events/${eventId}/deck-stats`, { token });
+}
+
+export function getAdminDeckStats(token, { from = "", to = "" } = {}) {
+  const params = new URLSearchParams(Object.entries({ from, to }).filter(([, v]) => v));
+  const qs = params.toString();
+  return request(`/admin/deck-stats${qs ? `?${qs}` : ""}`, { token });
+}
+
 // ---------- Event alerts (Web Push) ----------
 
 export function getPushKey(token) {

@@ -3411,3 +3411,58 @@ button.small {
     right: 12px;
   }
 }
+
+/* ---------- Event decks (ui/events/deckDialog.js) ---------- */
+
+.ev-g3 {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.ev-g3 img {
+  width: 32px;
+  height: 46px;
+  object-fit: cover;
+  border-radius: 3px;
+}
+
+.ev-badge.deck-ok {
+  background: var(--success);
+  color: var(--success-contrast);
+  border: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.ev-badge.no-deck {
+  color: var(--muted);
+}
+
+dialog.ev-deck-dialog {
+  width: min(720px, calc(100vw - 32px));
+}
+
+dialog.ev-deck-dialog select,
+dialog.ev-deck-dialog input {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 14px;
+}
+
+.ev-deck-view {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.ev-deck-view h3 {
+  margin: 12px 0 6px;
+  font-size: 14px;
+}

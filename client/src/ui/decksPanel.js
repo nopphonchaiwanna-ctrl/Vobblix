@@ -17,6 +17,7 @@ import { escapeHtml } from "./format.js";
 import { initDashboardNav } from "./dashboardNav.js";
 import { confirmDialog } from "./confirmDialog.js";
 import { showPanelScreen } from "./screens.js";
+import { parseDecklogInput } from "./decklogInput.js";
 
 function el(id) {
   return document.getElementById(id);
@@ -40,32 +41,6 @@ function sourceLabel(sourceLocale) {
   return SOURCE_LABELS[sourceLocale] || `Decklog (${sourceLocale})`;
 }
 
-// Users naturally copy the *full* decklog link from their browser's
-// address bar, not just the trailing code - and each of the three
-// sites' URLs already says which site it is, so there's no reason to
-// make them figure that out by hand. If the "deck code" field holds
-// a recognizable decklog view URL, pull the code and the site out of
-// it directly; otherwise treat the input as a bare code and leave
-// whatever site the dropdown already has.
-function parseDecklogInput(raw) {
-  const trimmed = (raw || "").trim();
-  const match = trimmed.match(
-    /^https?:\/\/(decklog-en\.bushiroad\.com|decklog\.bushiroad\.com)\/(?:(ja)\/)?view\/([A-Za-z0-9]+)/i
-  );
-  if (!match) return { code: trimmed, sourceLocale: null };
-  const [, host, jaSegment] = match;
-  const code = match[3];
-  let sourceLocale;
-  if (host.toLowerCase() === "decklog.bushiroad.com") {
-    sourceLocale = "decklog_jp";
-  } else if (jaSegment) {
-    sourceLocale = "decklog_en_ja";
-  } else {
-    sourceLocale = "decklog_en";
-  }
-  return { code, sourceLocale };
-}
-
 // Renders one card as a single image-forward tile, Decklog-style
 // grid. Each row already represents one distinct card_number with
 // its total count in `quantity` - Decklog's own API returns one
@@ -79,7 +54,7 @@ function parseDecklogInput(raw) {
 // skill-text translation, etc.) is still here, just moved into the
 // tile's `title` tooltip instead of always-on text, so the grid stays
 // image-first and scannable instead of getting crowded.
-function cardTile(card) {
+export function cardTile(card) {
   const captionLine2 = card.inCatalog
     ? card.grade != null
       ? `Grade ${escapeHtml(String(card.grade))}`
@@ -124,7 +99,7 @@ function cardTile(card) {
 // width once we know. Runs after the grid is in the DOM (images may
 // still be loading, so this also handles the still-loading case via
 // the "load" event instead of assuming .complete).
-function markLandscapeTiles(container) {
+export function markLandscapeTiles(container) {
   container.querySelectorAll(".deck-card-tile img").forEach((img) => {
     const markIfLandscape = () => {
       if (img.naturalWidth > img.naturalHeight) {

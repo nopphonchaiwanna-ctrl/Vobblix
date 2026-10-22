@@ -3,6 +3,7 @@
 // then the round's pairings / standings / players. One column on phones.
 
 import { escapeHtml } from "../format.js";
+import { g3Html } from "./deckDialog.js";
 import { eventSteps, playerAction } from "./state.js";
 import {
   badgesHtml, stepsHtml, pairingsHtml, standingsHtml, finalStandingsHtml, penaltiesHtml, tableLabel, playerStatusText,
@@ -86,6 +87,24 @@ function actionCard(view, action, { judgeCooldownUntil = 0 }) {
   }
 }
 
+/** "Your deck" (deck-stats design §8): only in events that collect decks, only for a registered player. */
+function deckCard(view, mine) {
+  const { event, myDeck } = view;
+  if (!mine || event.deckSubmission === "off" || !("myDeck" in view)) return "";
+  const open = event.status === "registration" || event.status === "check_in";
+  const required = event.deckSubmission === "required";
+  const status = myDeck
+    ? `<p><strong>${escapeHtml(myDeck.title)}</strong></p><p>${g3Html(myDeck.g3)}</p>`
+    : `<p class="muted">${required ? "Required before check-in." : "Optional - it counts toward the event's grade 3 stats."}</p>`;
+  const buttons = open
+    ? `<div class="row-actions">
+         <button type="button" class="${myDeck ? "secondary" : ""}" data-action="submit-deck">${myDeck ? "Change deck" : "Submit deck"}</button>
+         ${myDeck && !required ? `<button type="button" class="secondary" data-action="withdraw-deck">Withdraw deck</button>` : ""}
+       </div>`
+    : "";
+  return `<section class="ev-action ev-deck-card"><h2>Your deck</h2>${status}${buttons}</section>`;
+}
+
 export function renderPlayerView(view, { userId, tab = "pairings", judgeCooldownUntil = 0 }) {
   const { event } = view;
   const action = playerAction(view, userId);
@@ -119,6 +138,7 @@ export function renderPlayerView(view, { userId, tab = "pairings", judgeCooldown
       </aside>
       <div class="ev-main">
         ${actionCard(view, action, { judgeCooldownUntil })}
+        ${deckCard(view, mine)}
         <div class="ev-tabs" role="tablist">${tabs
           .map(([id, label]) => `<button type="button" role="tab" class="ev-tab" data-action="tab" data-tab="${id}" aria-selected="${id === activeTab}">${label}</button>`)
           .join("")}</div>

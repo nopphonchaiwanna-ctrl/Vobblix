@@ -31,6 +31,7 @@ import {
   resolveJudgeCall,
   issuePenalty,
   decidePenalty,
+  withdrawEventDeck,
 } from "../net/api.js";
 import { getSocket } from "../net/socket.js";
 import { askEventPushConsent } from "../net/push.js";
@@ -42,6 +43,7 @@ import { showPanelScreen } from "./screens.js";
 import { renderPlayerView } from "./events/playerView.js";
 import { renderStaffView } from "./events/organizerView.js";
 import { eventFormHtml, bindEventForm } from "./events/eventForm.js";
+import { openDeckDialog, openPlayerDeckDialog } from "./events/deckDialog.js";
 import { GAME_LABELS, STATUS_LABELS, REGION_LABELS, REGULATION_LABELS, formatDuration } from "./events/common.js";
 
 const REFRESH_MS = 10_000;
@@ -302,6 +304,14 @@ export function initEventsPanel({ getToken, getUserId, onBack, goToMatch, watchT
       showToast(`${r.approved} player${r.approved === 1 ? "" : "s"} checked in.${skipped}`);
     },
     "approve-check-in": async (btn) => approveEventCheckIn(token(), eventId, btn.dataset.playerId),
+    "submit-deck": async () => {
+      if (await openDeckDialog({ getToken, eventId })) showToast("Deck submitted.");
+    },
+    "withdraw-deck": async () => {
+      const ok = await confirmDialog("Your deck won't count toward this event's stats.", { title: "Withdraw your deck?", confirmLabel: "Withdraw" });
+      if (ok) await withdrawEventDeck(token(), eventId);
+    },
+    "view-deck": async (btn) => openPlayerDeckDialog({ getToken, eventId, playerId: btn.dataset.playerId }),
     start: async () => {
       const r = await startEvent(token(), eventId);
       tab = "pairings";
@@ -340,7 +350,7 @@ export function initEventsPanel({ getToken, getUserId, onBack, goToMatch, watchT
     },
   };
   // Actions that don't re-render the event afterwards.
-  const NO_RERENDER = new Set(["open-event", "back-to-list", "tab", "go-to-table", "watch"]);
+  const NO_RERENDER = new Set(["view-deck", "open-event", "back-to-list", "tab", "go-to-table", "watch"]);
 
   bodyEl.addEventListener("click", async (e) => {
     const btn = e.target.closest("button[data-action]");
