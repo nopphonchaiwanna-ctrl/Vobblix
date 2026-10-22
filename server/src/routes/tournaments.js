@@ -483,6 +483,7 @@ export function createTournamentsRouter(io) {
       if (err instanceof DecklogImportError || err instanceof eventDecks.RideDeckEmptyError) {
         return res.status(400).json({ error: err.message });
       }
+      if (err instanceof eventDecks.DecksLockedError) return res.status(409).json({ error: err.message });
       next(err);
     }
   });
@@ -492,9 +493,10 @@ export function createTournamentsRouter(io) {
       const target = await loadDeckTarget(req, res);
       if (!target) return;
       if (deckRequired(target.event)) return res.status(409).json({ error: "A deck is required for this event." });
-      await eventDecks.deleteEventDeck(target.player.id);
+      await eventDecks.deleteEventDeck(target.event.id, target.player.id);
       res.status(204).end();
     } catch (err) {
+      if (err instanceof eventDecks.DecksLockedError) return res.status(409).json({ error: err.message });
       next(err);
     }
   });

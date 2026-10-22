@@ -8,6 +8,19 @@ import { played } from "./tournaments.js";
 import { g3Group } from "../tournament/deckStats.js";
 
 export class RideDeckEmptyError extends Error {}
+export class DecksLockedError extends Error {}
+
+const OPEN_STATUSES = ["registration", "check_in"];
+
+/**
+ * Re-checks inside the write's transaction that decks are still open:
+ * a Decklog import can take seconds after the route checked. FOR SHARE
+ * waits out a start (which holds the row FOR UPDATE) and then sees it.
+ */
+async function assertDecksOpen(client, eventId) {
+  const { rows } = await client.query("SELECT status FROM tournament_events WHERE id = $1 FOR SHARE", [eventId]);
+  if (!OPEN_STATUSES.includes(rows[0]?.status)) throw new DecksLockedError("Decks can't change once the event has started.");
+}
 
 /**
  * Copies `deckId` (which must belong to `userId`) into the player's
@@ -18,6 +31,7 @@ export async function saveEventDeck(eventId, playerId, deckId, userId) {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    await assertDecksOpen(client, eventId);
     const deck = (await client.query("SELECT * FROM decks WHERE id = $1 AND user_id = $2", [deckId, userId])).rows[0];
     if (!deck) {
       await client.query("ROLLBACK");
@@ -52,9 +66,20 @@ export async function saveEventDeck(eventId, playerId, deckId, userId) {
   }
 }
 
-export async function deleteEventDeck(playerId) {
-  const { rowCount } = await pool.query("DELETE FROM event_decks WHERE player_id = $1", [playerId]);
-  return rowCount > 0;
+export async function deleteEventDeck(eventId, playerId) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await assertDecksOpen(client, eventId);
+    const { rowCount } = await client.query("DELETE FROM event_decks WHERE player_id = $1", [playerId]);
+    await client.query("COMMIT");
+    return rowCount > 0;
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 export async function getEventDeck(playerId) {

@@ -1,7 +1,7 @@
 // Deck submission for JP D-Standard events (deck-stats design §4-§6).
 import { describe, test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { SKIP_REASON, resetDatabase, startServer, apiFor, createAndLogin, createPublishedShop, withDb, openCheckInAndApproveAll, socketFor, FUTURE_START } from "./helpers.js";
+import { SKIP_REASON, resetDatabase, startServer, apiFor, createAndLogin, createPublishedShop, withDb, openCheckInAndApproveAll, socketFor, testDatabaseUrl, FUTURE_START } from "./helpers.js";
 
 describe("event decks", { skip: SKIP_REASON }, () => {
   let server;
@@ -231,5 +231,26 @@ describe("event decks", { skip: SKIP_REASON }, () => {
     const r = await api.delete(`/events/${e.id}/deck`, p.token);
     assert.equal(r.status, 409);
     assert.equal(r.body.error, "A deck is required for this event.");
+  });
+
+  // A Decklog import can take seconds after the route's status check; the
+  // write itself must refuse once the event has started (review finding).
+  test("the write refuses once the event has started, even after the route's check", async () => {
+    // The pool reads DATABASE_URL once, on import: point it at the test DB just for that.
+    const realUrl = process.env.DATABASE_URL;
+    process.env.DATABASE_URL = testDatabaseUrl();
+    const eventDecks = await import("../../src/db/eventDecks.js");
+    if (realUrl === undefined) delete process.env.DATABASE_URL;
+    else process.env.DATABASE_URL = realUrl;
+    const p = await newPlayer();
+    const e = await registeredEvent("optional", [p]);
+    const d = await seedDeck(p.id, { ride: ["DZ-BT01/001"] });
+    assert.equal((await submit(e, p, { deckId: d })).status, 200);
+    const playerId = (await withDb((db) => db.query("SELECT id FROM tournament_players WHERE event_id = $1 AND user_id = $2", [e.id, p.id]))).rows[0].id;
+    await withDb((db) => db.query("UPDATE tournament_events SET status = 'swiss' WHERE id = $1", [e.id]));
+    await assert.rejects(eventDecks.saveEventDeck(e.id, playerId, d, p.id), eventDecks.DecksLockedError);
+    await assert.rejects(eventDecks.deleteEventDeck(e.id, playerId), eventDecks.DecksLockedError);
+    assert.ok(await eventDecks.getEventDeck(playerId), "the submitted deck is untouched");
+    await (await import("../../src/db/pool.js")).pool.end();
   });
 });

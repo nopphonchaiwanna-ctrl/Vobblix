@@ -8,6 +8,26 @@ import { badgesHtml, stepsHtml, pairingsHtml, standingsHtml, finalStandingsHtml,
 
 const JUDGE_ACTIONS = new Set(["notify_pairings"]);
 
+/** "Deck ✓" (opens the full deck) or "No deck" - staff only; players never get these fields. */
+function deckBadge(p) {
+  return p.deckSubmitted
+    ? `<button type="button" class="ev-badge deck-ok" data-action="view-deck" data-player-id="${p.id}" title="${escapeHtml(p.deckG3 || "")}">Deck ✓</button>`
+    : `<span class="ev-badge no-deck">No deck</span>`;
+}
+
+/** Every player's deck once check-in is over - a judge's deck check mid-event (design §2.4: staff see decks any time). */
+function decksTab(view) {
+  const rows = view.players
+    .filter((p) => p.entryStatus === "entered" && !p.noShow)
+    .map((p) => `<div class="ev-row">
+        <span class="ev-names">${escapeHtml(p.displayName)}</span>
+        <span class="muted">${escapeHtml(p.deckG3 || "")}</span>
+        <span class="ev-pair-actions">${deckBadge(p)}</span>
+      </div>`)
+    .join("");
+  return `<div class="ev-list">${rows || `<p class="list-empty">Nobody played.</p>`}</div>`;
+}
+
 function checkInTab(view, organizer) {
   const inShop = new Set(view.inShopUserIds || []);
   const rows = view.players
@@ -22,11 +42,7 @@ function checkInTab(view, organizer) {
           ? `<button type="button" class="small${p.checkInRequestedAt ? "" : " secondary"}" data-action="approve-check-in" data-player-id="${p.id}"
                ${needsDeck ? `disabled title="No deck submitted yet"` : ""}>Approve</button>`
           : "";
-      const deck = !decks
-        ? ""
-        : p.deckSubmitted
-          ? `<button type="button" class="ev-badge deck-ok" data-action="view-deck" data-player-id="${p.id}" title="${escapeHtml(p.deckG3 || "")}">Deck ✓</button>`
-          : `<span class="ev-badge no-deck">No deck</span>`;
+      const deck = decks ? deckBadge(p) : "";
       return `<div class="ev-row">
           <span class="ev-names">${escapeHtml(p.displayName)}</span>
           ${inShop.has(p.userId) ? `<span class="ev-badge in-shop">In shop</span>` : ""}
@@ -111,6 +127,7 @@ export function renderStaffView(view, { userId, role, tab }) {
     ...(["registration", "check_in"].includes(event.status) ? [["check_in", "Check-in"], ["waitlist", "Waitlist"]] : []),
     ...(running ? [["pairings", "Pairings"], ["calls", `Judge calls${openCalls ? ` (${openCalls})` : ""}`], ["standings", "Standings"]] : []),
     ...(event.status === "completed" ? [["final", "Final standings"]] : []),
+    ...(event.deckSubmission !== "off" && !["registration", "check_in", "cancelled"].includes(event.status) ? [["decks", "Decks"]] : []),
     // The shop owner's G3 table (deck-stats design §7.3) - loaded by eventsPanel.js.
     ...(event.status === "completed" && organizer && event.deckSubmission !== "off" ? [["deck_stats", "Deck stats"]] : []),
     ["penalties", `Penalties${pendingPenalties ? ` (${pendingPenalties})` : ""}`],
@@ -127,6 +144,7 @@ export function renderStaffView(view, { userId, role, tab }) {
     penalties: () => penaltiesTab(view, organizer),
     judges: () => judgesTab(view),
     deck_stats: () => `<div data-deck-stats><p class="hint">Loading…</p></div>`,
+    decks: () => decksTab(view),
   }[activeTab]();
 
   const bar = actions
