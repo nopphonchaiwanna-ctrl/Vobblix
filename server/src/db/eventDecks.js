@@ -4,6 +4,8 @@
 // worked out from the 'ride' zone when read (tournament/deckStats.js).
 
 import { pool } from "./pool.js";
+import { played } from "./tournaments.js";
+import { g3Group } from "../tournament/deckStats.js";
 
 export class RideDeckEmptyError extends Error {}
 
@@ -96,4 +98,45 @@ export function rideByPlayer(rows) {
     out.get(r.player_id).push({ cardNumber: r.card_number, name: r.name, grade: r.grade, imageUrl: r.image_url, nation: r.nation });
   }
   return out;
+}
+
+/**
+ * Everything the G3 table needs (design §7): finished JP D-Standard
+ * events that collected decks - one event, or every one completed in
+ * [start, end) - their played players with a G3 group (null = no deck)
+ * and all their matches.
+ */
+export async function listDeckStatsRows({ eventId = null, start = null, end = null } = {}) {
+  const { rows: events } = await pool.query(
+    `SELECT id FROM tournament_events
+     WHERE status = 'completed' AND deck_submission <> 'off'
+       AND game = 'vanguard' AND vanguard_region = 'jp' AND vanguard_regulation = 'd_standard'
+       AND ($1::uuid IS NULL OR id = $1)
+       AND ($2::timestamptz IS NULL OR completed_at >= $2)
+       AND ($3::timestamptz IS NULL OR completed_at < $3)`,
+    [eventId, start, end]
+  );
+  const ids = events.map((e) => e.id);
+  if (!ids.length) return { players: [], matches: [], eventCount: 0 };
+
+  const { rows: playerRows } = await pool.query(
+    `SELECT tp.id, tp.final_rank, tp.final_label FROM tournament_players tp
+     WHERE tp.event_id = ANY($1::uuid[]) AND ${played("tp")}`,
+    [ids]
+  );
+  const { rows: matchRows } = await pool.query(
+    "SELECT player1_id, player2_id, result FROM tournament_matches WHERE event_id = ANY($1::uuid[])",
+    [ids]
+  );
+  const ride = rideByPlayer(await listEventDeckRide(ids));
+  return {
+    players: playerRows.map((p) => ({
+      id: p.id,
+      group: ride.has(p.id) ? g3Group(ride.get(p.id)) : null,
+      finalRank: p.final_rank,
+      finalLabel: p.final_label,
+    })),
+    matches: matchRows.map((m) => ({ player1Id: m.player1_id, player2Id: m.player2_id, result: m.result })),
+    eventCount: ids.length,
+  };
 }

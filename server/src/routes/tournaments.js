@@ -13,7 +13,7 @@ import { startingRoster } from "../tournament/entry.js";
 import { assignTables } from "../tournament/tables.js";
 import { parseStartsAt, registrationOpen, upcomingWindow } from "../tournament/schedule.js";
 import { buildHistoryEntry } from "../tournament/history.js";
-import { normalizeDeckSubmission, takesDecks, g3Group } from "../tournament/deckStats.js";
+import { normalizeDeckSubmission, takesDecks, g3Group, computeDeckStats } from "../tournament/deckStats.js";
 import * as eventDecks from "../db/eventDecks.js";
 import { publicDeckCard } from "./decks.js";
 import { importDeckForUser } from "../services/deckImport.js";
@@ -427,6 +427,10 @@ export function createTournamentsRouter(io) {
   tournamentsRouter.get("/history", async (req, res, next) => {
     try {
       const { events, matches, penalties } = await db.listMatchHistoryRows(req.auth.userId);
+      // Opponents' G3s, only from events that collected decks.
+      const deckEventIds = events.filter(decksOn).map((e) => e.id);
+      const ride = eventDecks.rideByPlayer(deckEventIds.length ? await eventDecks.listEventDeckRide(deckEventIds) : []);
+      const opponentDecks = new Map([...ride].map(([playerId, cards]) => [playerId, { g3: g3Group(cards).g3 }]));
       res.json({
         events: events.map((e) =>
           buildHistoryEntry({
@@ -435,6 +439,7 @@ export function createTournamentsRouter(io) {
             matches: matches.filter((m) => m.player1_id === e.my_player_id || m.player2_id === e.my_player_id),
             penalties: penalties.filter((p) => p.player_id === e.my_player_id),
             playedCount: e.played_count,
+            opponentDecks,
           })
         ),
       });
@@ -489,6 +494,20 @@ export function createTournamentsRouter(io) {
       if (deckRequired(target.event)) return res.status(409).json({ error: "A deck is required for this event." });
       await eventDecks.deleteEventDeck(target.player.id);
       res.status(204).end();
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // The event's G3 table - its shop owner (or an admin), once it's over.
+  tournamentsRouter.get("/:id/deck-stats", async (req, res, next) => {
+    try {
+      const event = await requireEventOwnerOrAdmin(req, res, req.params.id);
+      if (!event) return;
+      if (!decksOn(event)) return res.status(404).json({ error: "This event doesn't take decks." });
+      if (event.status !== "completed") return res.status(409).json({ error: "Stats are ready once the event is finished." });
+      const { players, matches } = await eventDecks.listDeckStatsRows({ eventId: event.id });
+      res.json({ stats: computeDeckStats({ players, matches }) });
     } catch (err) {
       next(err);
     }

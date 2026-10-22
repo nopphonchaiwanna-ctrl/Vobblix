@@ -28,6 +28,8 @@ import {
 } from "../db/accountDeletion.js";
 import { isValidTheme, DEFAULT_THEME_ID } from "../scenes/themes.js";
 import { DEFAULT_LAYOUT_TEMPLATE_ID } from "../scenes/templates.js";
+import { listDeckStatsRows } from "../db/eventDecks.js";
+import { computeDeckStats, bangkokRange } from "../tournament/deckStats.js";
 
 // Takes `io` (same reason as routes/orders.js's createOrdersRouter) so
 // rejecting a shop can push a realtime "fix this and resubmit" notice
@@ -50,6 +52,19 @@ export function createAdminRouter(io) {
       console.error("[admin] failed to notify shop owner", err);
     }
   }
+
+  // G3 stats across every finished JP D-Standard event that collected
+  // decks, optionally limited to whole Bangkok days (deck-stats design §7.4).
+  adminRouter.get("/deck-stats", async (req, res, next) => {
+    try {
+      const range = bangkokRange(req.query.from || undefined, req.query.to || undefined);
+      if (range.error) return res.status(400).json({ error: range.error });
+      const { players, matches, eventCount } = await listDeckStatsRows(range);
+      res.json({ stats: computeDeckStats({ players, matches }), eventCount });
+    } catch (err) {
+      next(err);
+    }
+  });
 
   adminRouter.get("/owner-applications", async (req, res, next) => {
     try {

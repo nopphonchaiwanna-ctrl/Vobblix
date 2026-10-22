@@ -26,9 +26,10 @@ const PHASE_ORDER = { swiss: 0, bracket: 1 };
 /**
  * One history entry for one event. `me` is the player's own
  * tournament_players row, `matches` every match they were in (with
- * `opponent_name`, null for a bye), `penalties` their own penalties.
+ * `opponent_name` and `opponent_player_id`, null for a bye), `penalties`
+ * their own penalties, `opponentDecks` opponent player id -> { g3 }.
  */
-export function buildHistoryEntry({ event, me, matches, penalties, playedCount }) {
+export function buildHistoryEntry({ event, me, matches, penalties, playedCount, opponentDecks = new Map() }) {
   const shown = penalties.filter((p) => SHOWN_PENALTY_STATUSES.has(p.status));
   const brief = (p) => ({ level: p.level, reason: p.reason });
 
@@ -47,7 +48,8 @@ export function buildHistoryEntry({ event, me, matches, penalties, playedCount }
       roundLabel: m.phase === "swiss" ? `Round ${m.round_number}` : bracketRoundLabel(event.effective_cut_size, m.round_number),
       opponentName: m.player2_id === null ? "Bye" : m.opponent_name,
       result,
-      opponentDeck: null, // filled by part 4 (deck submission)
+      // The opponent's G3 ride line, when they submitted a deck (part 4).
+      opponentDeck: (m.opponent_player_id && opponentDecks.get(m.opponent_player_id)) || null,
       penalties: shown.filter((p) => p.match_id === m.id).map(brief),
     };
   });

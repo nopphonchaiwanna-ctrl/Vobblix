@@ -199,4 +199,24 @@ describe("match history", { skip: SKIP_REASON }, () => {
     assert.equal(order[0], newer);
     assert.equal(order[order.length - 1], older);
   });
+
+  test("opponent's G3 shows after the event when they submitted", async () => {
+    const id = await finishedEvent("Deck History Cup");
+    await withDb(async (db) => {
+      await db.query("UPDATE tournament_events SET vanguard_region = 'jp', vanguard_regulation = 'd_standard', deck_submission = 'optional' WHERE id = $1", [id]);
+      await db.query("INSERT INTO cards (card_number, set_code, name, grade) VALUES ('H/1', 'H', 'History G3', 3) ON CONFLICT DO NOTHING");
+    });
+    const mine = await addPlayer(id, me.id, { final_rank: 1 });
+    const a = await addPlayer(id, opp[0].id, { final_rank: 2 });
+    const b = await addPlayer(id, opp[1].id, { final_rank: 3 });
+    await addMatch(id, "swiss", 1, mine, a, "player1_win");
+    await addMatch(id, "swiss", 2, b, mine, "player2_win");
+    await withDb(async (db) => {
+      const d = (await db.query("INSERT INTO event_decks (event_id, player_id, decklog_code, source_locale, title) VALUES ($1, $2, 'C', 'decklog_jp', 'T') RETURNING id", [id, a])).rows[0].id;
+      await db.query("INSERT INTO event_deck_cards (event_deck_id, card_number, decklog_card_number, zone, quantity) VALUES ($1, 'H/1', 'H/1', 'ride', 1)", [d]);
+    });
+    const e = await entryFor(id);
+    assert.equal(e.matches[0].opponentDeck.g3[0].name, "History G3");
+    assert.equal(e.matches[1].opponentDeck, null);
+  });
 });

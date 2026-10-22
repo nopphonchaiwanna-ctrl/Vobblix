@@ -134,3 +134,16 @@ test("no player or user ids leak into the entry", () => {
   assert.ok(!json.includes(ME));
   assert.ok(!json.includes("opp-player-id"));
 });
+
+test("opponentDeck comes from the map by opponent player id, null for a bye or no deck", () => {
+  const deck = { g3: [{ name: "Blaster Blade", cardNumber: "X-1", imageUrl: null, nation: null }] };
+  const e = build({
+    matches: [
+      { ...match("m1", "swiss", 1, ME, "opp-a", "player1_win"), opponent_player_id: "opp-a" },
+      { ...match("m2", "swiss", 2, ME, "opp-b", "player1_win"), opponent_player_id: "opp-b" },
+      { ...match("m3", "swiss", 3, ME, null, "bye", null), opponent_player_id: null },
+    ],
+    opponentDecks: new Map([["opp-a", deck]]),
+  });
+  assert.deepEqual(e.matches.map((m) => m.opponentDeck), [deck, null, null]);
+});
