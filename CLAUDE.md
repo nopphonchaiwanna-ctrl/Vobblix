@@ -106,12 +106,15 @@ deploy (code side ready: `render.yaml`, TURN via
 for the Render / Cloudflare Pages / Neon `production` branch accounts),
 6. Thai/English i18n.
 1. Neon is at migration 018 - **019 (users.avatar_config), 020
-   (event day: entry modes, check-in, tables, judges, penalties, push)
-   and 021 (events.starts_at) must run before the new server** (Render runs `npm run migrate` on
+   (event day: entry modes, check-in, tables, judges, penalties, push),
+   021 (events.starts_at) and 022 (event_penalties player_id index) must
+   run before the new server** (Render runs `npm run migrate` on
    start). Web Push needs `VAPID_*` env vars (docs/deploy.md 6.5).
    Event work is split in 4 parts: 1 event day = done; 2 lobby events
-   list + search + start times + all-online match tables = done; next
-   3 player match history,
+   list + search + start times + all-online match tables = done; 3
+   player match history (`GET /events/history`, own history only,
+   `/history` screen) = done - each match carries `opponentDeck: null`
+   for part 4 to fill with the opponent's G3 ride line; next
    4 deck submission + Vanguard deck stats by G3 ride line (per event:
    shop owner; across events: admin only). Part 4 must not depend on
    Decklog for TH-format Vanguard events - there's no TH Decklog.
