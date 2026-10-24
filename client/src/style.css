@@ -2594,6 +2594,22 @@ body.seated #call-panel .call-controls button {
   background: color-mix(in srgb, var(--bg) 94%, transparent);
 }
 
+/* Keyboard shortcut label in the button's corner; no keyboard on touch. */
+.hud-key {
+  position: absolute;
+  right: 4px;
+  bottom: 2px;
+  font: 700 10px/1 system-ui, sans-serif;
+  color: rgba(248, 250, 252, 0.6);
+  pointer-events: none;
+}
+
+@media (pointer: coarse) {
+  .hud-key {
+    display: none;
+  }
+}
+
 /* .icon is 1em square - size HUD icons through font-size. */
 .hud-btn > .icon {
   font-size: 22px;

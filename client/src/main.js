@@ -1326,6 +1326,29 @@ window.addEventListener("keydown", (e) => {
   leaveTable();
 });
 
+// Esc presses the Back button of whichever panel is showing (Settings,
+// Orders, Events, ...). Capture phase, so it runs before the table's Esc
+// above: in a text field the first Esc only leaves the field, and an
+// open dialog, popover, expanded call or profile menu keeps its own Esc.
+for (const btn of document.querySelectorAll(".back-btn")) {
+  btn.setAttribute("aria-keyshortcuts", "Escape");
+  btn.title = "Back (Esc)";
+}
+window.addEventListener(
+  "keydown",
+  (e) => {
+    if (e.key !== "Escape" || e.repeat) return;
+    if (document.querySelector("dialog[open], :popover-open, #call-panel.expanded, #topbar-menu:not([hidden])")) return;
+    const back = [...document.querySelectorAll(".back-btn")].find((btn) => btn.checkVisibility());
+    if (!back) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (isTextInputFocused()) document.activeElement.blur();
+    else back.click();
+  },
+  { capture: true }
+);
+
 // ---------- Touch: thumbstick + soft keyboard ----------
 const joystickEl = document.getElementById("joystick");
 let detachJoystick = null;

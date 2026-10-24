@@ -5,6 +5,7 @@
 // the whole screen; new menu items only need another entry in `items`.
 
 import { icon } from "./icons.js";
+import { isTextInputFocused, shopKeysActive } from "../scene3d/input.js";
 
 /**
  * @param {{ onToggleShopChat: () => void, onOpenNotifications: (anchor: HTMLElement) => void,
@@ -81,6 +82,25 @@ export function initHud({ onToggleShopChat, onOpenNotifications, items }) {
 
   document.addEventListener("click", (e) => {
     if (!grid.hidden && !grid.contains(e.target) && !menuBtn.contains(e.target)) closeMenu();
+  });
+
+  // C / N / M press the matching HUD button (the label on each button
+  // says which). e.code, not e.key, so they work on a Thai layout too.
+  // Same rule as walking: not while typing, a dialog is up or a panel
+  // is open over the shop - except M, which also closes its own menu.
+  const shortcuts = { KeyC: chatBtn, KeyN: bellBtn, KeyM: menuBtn };
+  window.addEventListener("keydown", (e) => {
+    const btn = shortcuts[e.code];
+    if (!btn || root.hidden || e.repeat || e.metaKey || e.ctrlKey || e.altKey || isTextInputFocused()) return;
+    if (btn === menuBtn && !grid.hidden) {
+      if (document.querySelector(".over-shop:not([hidden]), dialog[open]")) return;
+      e.preventDefault();
+      closeMenu({ refocus: true });
+      return;
+    }
+    if (!shopKeysActive()) return;
+    e.preventDefault();
+    btn.click();
   });
 
   return {
