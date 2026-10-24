@@ -221,6 +221,27 @@ io.on("connection", (socket) => {
     return false;
   }
 
+  // Every client event goes through here instead of socket.on directly.
+  // Payloads come straight off the wire, so a hand-crafted emit can send
+  // no payload, null, or a non-function ack - and a TypeError thrown
+  // from a socket.io listener isn't caught by anything, so it would take
+  // the whole process (every shop, every call) down with it. The handler
+  // always gets an object payload and a callable-or-undefined ack, and
+  // anything it still throws or rejects with is logged, not fatal.
+  function onEvent(event, handler) {
+    socket.on(event, (payload, ack) => {
+      const body = payload && typeof payload === "object" ? payload : {};
+      const reply = typeof ack === "function" ? ack : undefined;
+      try {
+        Promise.resolve(handler(body, reply)).catch((err) => {
+          console.error(`[socket] ${event} failed:`, err);
+        });
+      } catch (err) {
+        console.error(`[socket] ${event} failed:`, err);
+      }
+    });
+  }
+
   console.log(`[connect] ${socket.id} user=${socket.user.userId}`);
 
   // Lets REST routes (routes/orders.js) push realtime events to this
@@ -228,10 +249,10 @@ io.on("connection", (socket) => {
   // it's just sitting on the lobby/admin/owner-dashboard screens.
   socket.join(`user:${socket.user.userId}`);
 
-  socket.on("join-shop", async ({ roomId }, ack) => {
+  onEvent("join-shop", async ({ roomId }, ack) => {
     try {
       console.log(`[join-shop] ${socket.id} user=${socket.user.userId} roomId=${roomId}`);
-      const cleanRoomId = (roomId || "").trim().toLowerCase() || "default";
+      const cleanRoomId = (typeof roomId === "string" ? roomId : "").trim().toLowerCase() || "default";
 
       // Only shops that already exist (owner shops, admin central shops,
       // the "default" room from migration 017) - typing an unknown code
@@ -314,8 +335,10 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("move", ({ x, y }) => {
+  onEvent("move", ({ x, y }) => {
     if (!allowMove()) return;
+    // Relayed to everyone else in the shop as-is, so only real numbers.
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
     const meta = socketMeta.get(socket.id);
     if (!meta) return;
     const player = updatePosition(meta.roomId, socket.id, x, y);
@@ -323,7 +346,7 @@ io.on("connection", (socket) => {
     socket.to(meta.roomId).emit("player-moved", { id: socket.id, x, y });
   });
 
-  socket.on("join-table", async ({ tableId }, ack) => {
+  onEvent("join-table", async ({ tableId }, ack) => {
     const meta = socketMeta.get(socket.id);
     if (!meta) return;
     const table = meta.tables.find((t) => t.id === tableId);
@@ -361,7 +384,7 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("leave-table", () => {
+  onEvent("leave-table", () => {
     const meta = socketMeta.get(socket.id);
     if (!meta || !meta.tableId) return;
     endCallForSocket(socket, meta);
@@ -375,9 +398,9 @@ io.on("connection", (socket) => {
     });
   });
 
-  socket.on("shop-chat", async ({ text }) => {
+  onEvent("shop-chat", async ({ text }) => {
     const meta = socketMeta.get(socket.id);
-    const clean = (text || "").trim().slice(0, 500);
+    const clean = (typeof text === "string" ? text : "").trim().slice(0, 500);
     if (!meta || !clean || !chatAllowed()) return;
     try {
       const saved = await insertChatMessage({
@@ -404,9 +427,9 @@ io.on("connection", (socket) => {
     }
   });
 
-  socket.on("table-chat", async ({ text }) => {
+  onEvent("table-chat", async ({ text }) => {
     const meta = socketMeta.get(socket.id);
-    const clean = (text || "").trim().slice(0, 500);
+    const clean = (typeof text === "string" ? text : "").trim().slice(0, 500);
     if (!meta || !meta.tableId || !clean || !chatAllowed()) return;
     try {
       const saved = await insertChatMessage({
@@ -432,7 +455,7 @@ io.on("connection", (socket) => {
 
   // Where this player's current match is: an in-shop table (and a spot
   // beside it to stand, inside its join range) or an online table.
-  socket.on("go-to-match", async ({ eventId } = {}, ack) => {
+  onEvent("go-to-match", async ({ eventId } = {}, ack) => {
     const meta = socketMeta.get(socket.id);
     if (!meta) return ack?.({ error: "not-in-shop" });
     const tables = await activeMatchTables(meta.shopDbId);
@@ -452,7 +475,7 @@ io.on("connection", (socket) => {
   // call, and offer/answer/ICE relayed between peers). See
   // client/src/webrtc/callManager.js for the browser side.
 
-  socket.on("join-call", async (_payload, ack) => {
+  onEvent("join-call", async (_payload, ack) => {
     const meta = socketMeta.get(socket.id);
     if (!meta || !meta.tableId) return ack?.({ ok: false, reason: "not-seated" });
 
@@ -504,7 +527,7 @@ io.on("connection", (socket) => {
     });
   });
 
-  socket.on("leave-call", () => {
+  onEvent("leave-call", () => {
     const meta = socketMeta.get(socket.id);
     if (!meta || !meta.tableId) return;
     const player = getPlayer(meta.roomId, socket.id);
@@ -513,7 +536,7 @@ io.on("connection", (socket) => {
     socket.to(tableRoomName(meta.roomId, meta.tableId)).emit("call-peer-left", { id: socket.id });
   });
 
-  socket.on("enable-video", (_payload, ack) => {
+  onEvent("enable-video", (_payload, ack) => {
     const meta = socketMeta.get(socket.id);
     if (!meta || !meta.tableId) return ack?.({ ok: false, reason: "not-seated" });
 
@@ -530,7 +553,7 @@ io.on("connection", (socket) => {
     ack?.({ ok: true });
   });
 
-  socket.on("disable-video", () => {
+  onEvent("disable-video", () => {
     const meta = socketMeta.get(socket.id);
     if (!meta || !meta.tableId) return;
     setVideoOn(meta.roomId, socket.id, false);
@@ -543,7 +566,7 @@ io.on("connection", (socket) => {
   // for mic, the <video> element's .muted flag for deafen - see
   // webrtc/callManager.js and ui/call.js). Both require being in the
   // call already; neither needs an ack, they're not gated by any limit.
-  socket.on("mute-mic", () => {
+  onEvent("mute-mic", () => {
     const meta = socketMeta.get(socket.id);
     if (!meta || !meta.tableId) return;
     const player = getPlayer(meta.roomId, socket.id);
@@ -552,7 +575,7 @@ io.on("connection", (socket) => {
     socket.to(tableRoomName(meta.roomId, meta.tableId)).emit("call-peer-mic-muted", { id: socket.id });
   });
 
-  socket.on("unmute-mic", () => {
+  onEvent("unmute-mic", () => {
     const meta = socketMeta.get(socket.id);
     if (!meta || !meta.tableId) return;
     const player = getPlayer(meta.roomId, socket.id);
@@ -561,7 +584,7 @@ io.on("connection", (socket) => {
     socket.to(tableRoomName(meta.roomId, meta.tableId)).emit("call-peer-mic-unmuted", { id: socket.id });
   });
 
-  socket.on("deafen", () => {
+  onEvent("deafen", () => {
     const meta = socketMeta.get(socket.id);
     if (!meta || !meta.tableId) return;
     const player = getPlayer(meta.roomId, socket.id);
@@ -570,7 +593,7 @@ io.on("connection", (socket) => {
     socket.to(tableRoomName(meta.roomId, meta.tableId)).emit("call-peer-deafened", { id: socket.id });
   });
 
-  socket.on("undeafen", () => {
+  onEvent("undeafen", () => {
     const meta = socketMeta.get(socket.id);
     if (!meta || !meta.tableId) return;
     const player = getPlayer(meta.roomId, socket.id);
@@ -583,7 +606,7 @@ io.on("connection", (socket) => {
   // ICE candidate) is opaque to the server, it just forwards it to the
   // named peer. Only relayed within the sender's own current table, so a
   // socket can't be used to reach peers outside its own table-call.
-  socket.on("call-signal", ({ to, data }) => {
+  onEvent("call-signal", ({ to, data }) => {
     const meta = socketMeta.get(socket.id);
     if (!meta || !to) return;
     const targetMeta = socketMeta.get(to);
@@ -594,7 +617,7 @@ io.on("connection", (socket) => {
   // Explicit "I'm going back to the lobby" - unlike disconnect, the
   // socket itself stays open (still joined to `user:<id>` for order
   // push notifications), only shop/table membership is torn down.
-  socket.on("leave-shop", () => leaveShop(socket));
+  onEvent("leave-shop", () => leaveShop(socket));
 
   socket.on("disconnect", () => {
     leaveShop(socket);
