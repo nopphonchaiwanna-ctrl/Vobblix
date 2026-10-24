@@ -8,6 +8,11 @@ npm-debug.log*
 
 # Exported card-translation batches (regenerate with scripts/export-untranslated-batch.js)
 untranslated_batch*.csv
+# Translation batches 3+ and term fixes: already applied to Neon, kept local only
+# (batch1/batch2 stay tracked)
+server/sql/batch[3-9]-manual-translations.sql
+server/sql/batch[1-9][0-9]-manual-translations.sql
+server/sql/fix-card-terms-*.sql
 
 # Local Claude Code tooling (Impeccable skill/agents, personal settings)
 .claude/
